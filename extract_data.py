@@ -1,5 +1,9 @@
 import numpy as np
+from scipy.io import savemat
 import struct
+from scipy.io import loadmat
+import h5py
+import pandas as pd
 
 # fonction permettant d'ouvrir un fichier binaire écrit en hexadécimal, de l'enregistrer dans un tableau 2d et d'afficher le contenu d'une ligne ou d'une colonne en sachant qu'une ligne fait 1024 octets
 def extract_data(file_path, offset1, offset2):
@@ -127,9 +131,18 @@ AD_NAVIGATION[:,4] = matrix[:,11].astype(np.uint32)*(2**24)+matrix[:,10].astype(
 AD_NAVIGATION[:,5] = matrix[:,19].astype(np.uint64)*(2**56)+matrix[:,18].astype(np.uint64)*(2**48)+matrix[:,17].astype(np.uint64)*(2**40)+matrix[:,16].astype(np.uint64)*(2**32)+matrix[:,15].astype(np.uint32)*(2**24)+matrix[:,14].astype(np.uint32)*(2**16)+matrix[:,13].astype(np.uint32)*(2**8)+matrix[:,12].astype(np.uint32) # Latitude (Rad)
 """
 
-def extract_uint64(*cols):
+def extract_uint64_forward(*cols):
     result = np.zeros(matrix.shape[0])
     sorted_cols = sorted(cols)
+    shifts = [0, 8, 16, 24, 32, 40, 48, 56]
+    for i, col in enumerate(sorted_cols):
+        dtype = np.uint32 if i < 4 else np.uint64
+        result += matrix[:, col].astype(dtype) * (2 ** shifts[i])
+    return result
+
+def extract_uint64_reverse(*cols):
+    result = np.zeros(matrix.shape[0])
+    sorted_cols = sorted(cols, reverse=True)
     shifts = [0, 8, 16, 24, 32, 40, 48, 56]
     for i, col in enumerate(sorted_cols):
         dtype = np.uint32 if i < 4 else np.uint64
@@ -156,16 +169,18 @@ def dec2single(*cols):
         byte_array[:, i] = matrix[:, col]
     return np.array([struct.unpack('<f', byte_array[i].tobytes())[0] for i in range(byte_array.shape[0])])
 
-compteur1s = extract_uint64(495, 496)  # Compteur 1s
-compteur1sv2 = np.tile(compteur1s, 10)  # version 10 Hz
-compteurSD = extract_uint64(499, 500, 501, 502)  # compteur SD
-compteur100Hzv2 = np.tile(compteurSD, 10)  # version 10 Hz
+compteur1s = extract_uint64_forward(495, 496)  # Compteur 1s
+compteur1sv2 = np.tile(compteur1s, 10).T  # version 10 Hz
+compteurSD = extract_uint64_reverse(499, 500, 501, 502)  # compteur SD
+compteurSDv2 = np.tile(compteurSD, 10).T  # version 10 Hz
+compteur100Hz = extract_uint64_reverse(505, 506, 507, 508)  # Compteur 100Hz
+compteur100Hzv2 = np.tile(compteur100Hz, 10).T  # version 10 Hz
 
 AD_NAVIGATION[:,0] = compteurSD
-AD_NAVIGATION[:,1] = extract_uint64(0, 1)  # Sys Status
-AD_NAVIGATION[:,2] = extract_uint64(2, 3)  # Filter Status
-AD_NAVIGATION[:,3] = extract_uint64(4, 5, 6, 7)  # Unix Time
-AD_NAVIGATION[:,4] = extract_uint64(8, 9, 10, 11)  # Micro Secondes
+AD_NAVIGATION[:,1] = extract_uint64_forward(0, 1)  # Sys Status
+AD_NAVIGATION[:,2] = extract_uint64_forward(2, 3)  # Filter Status
+AD_NAVIGATION[:,3] = extract_uint64_forward(4, 5, 6, 7)  # Unix Time
+AD_NAVIGATION[:,4] = extract_uint64_forward(8, 9, 10, 11)  # Micro Secondes
 AD_NAVIGATION[:,5] = dec2double(12, 13, 14, 15, 16, 17, 18, 19)  # Latitude (Rad)
 AD_NAVIGATION[:,6] = dec2double(20, 21, 22, 23, 24, 25, 26, 27)  # Longitude (Rad)
 AD_NAVIGATION[:,7] = dec2double(28, 29, 30, 31, 32, 33, 34, 35)  # Height
@@ -176,17 +191,20 @@ AD_NAVIGATION[:,11] = dec2single(48, 49, 50, 51)  # Acceleration X
 AD_NAVIGATION[:,12] = dec2single(52, 53, 54, 55)  # Acceleration Y
 AD_NAVIGATION[:,13] = dec2single(56, 57, 58, 59)  # Acceleration Z
 AD_NAVIGATION[:,14] = dec2single(60, 61, 62, 63)  # G
-AD_NAVIGATION[:,15] = dec2single(64, 65, 66, 67)  # Roll
-AD_NAVIGATION[:,16] = dec2single(68, 69, 70, 71)  # Pitch
-AD_NAVIGATION[:,17] = dec2single(72, 73, 74, 75)  # Heading
+AD_NAVIGATION[:,15] = dec2single(64, 65, 66, 67)*180/np.pi  # Roll
+AD_NAVIGATION[:,16] = dec2single(68, 69, 70, 71)*180/np.pi  # Pitch
+AD_NAVIGATION[:,17] = dec2single(72, 73, 74, 75)*180/np.pi  # Heading
 AD_NAVIGATION[:,18] = dec2single(76, 77, 78, 79)  # Angular Velocity X
 AD_NAVIGATION[:,19] = dec2single(80, 81, 82, 83)  # Angular Velocity Y
 AD_NAVIGATION[:,20] = dec2single(84, 85, 86, 87)  # Angular Velocity Z
 AD_NAVIGATION[:,21] = dec2single(88, 89, 90, 91)  # Latitude Standard Deviation
 AD_NAVIGATION[:,22] = dec2single(92, 93, 94, 95)  # Longitude Standard Deviation
 AD_NAVIGATION[:,23] = dec2single(96, 97, 98, 99)  # Height Standard Deviation
+AD_NAVIGATION[:,24] = compteur1s  # Secondes
+AD_NAVIGATION[:,25] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmili
+AD_NAVIGATION[:,26] = compteur100Hz  # Compteur 100hz
 # 
-IMU[:,0] = compteurSD 
+IMU[:,0] = compteurSD
 IMU[:,1] = dec2single(100, 101, 102, 103)  # Xaccl
 IMU[:,2] = dec2single(104, 105, 106, 107)  # Yaccl
 IMU[:,3] = dec2single(108, 109, 110, 111)  # Zaccl
@@ -200,10 +218,8 @@ IMU[:,10] = dec2single(136, 137, 138, 139) # Temperature IMU
 IMU[:,11] = dec2single(140, 141, 142, 143) # Barometer
 IMU[:,12] = dec2single(144, 145, 146, 147) # Temperature Pressure
 IMU[:,13] = compteur1s  # Compteur 1s
-IMU[:,14] = AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4]/1e3
-
-# Result.IMU(:,16) =((IMU(:,2)).^2 +(IMU(:,3)).^2 +(IMU(:,4)).^2).^0.5; a coder en python 
-IMU[:,15] = np.sqrt(IMU[:,1]**2 + IMU[:,2]**2 + IMU[:,3]**2)  # QuadSum
+IMU[:,14] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3
+IMU[:,15] = compteur100Hz
 #
 PaquetAirData[:,0] = compteurSD 
 PaquetAirData[:,1] = dec2single(148, 149, 150, 151)  # Barometric Altitude delay (s)
@@ -213,11 +229,58 @@ PaquetAirData[:,4] = dec2single(168, 169, 170, 171)  # Air Speed (m/s)
 PaquetAirData[:,5] = dec2single(164, 165, 166, 167)  # Barometric  Standard Deviation
 PaquetAirData[:,6] = dec2single(168, 169, 170, 171)  # Air Speed Standard Deviation
 PaquetAirData[:,7] = matrix[:,172] # Status
+PaquetAirData[:,8] = compteur1s
+
+PaquetAirData[:,-1] = compteur100Hz  # Compteur 100hz
+
+
+
+MOTUSRAW[:,0]=compteurSDv2
+MOTUSRAW[:,13]=compteur1sv2
+MOTUSRAW[:,-1]=compteur100Hzv2
+
+MOTUSORI[:,0]=compteurSD
+MOTUSORI[:,4]=compteur1s
+MOTUSORI[:,-1]=compteur100Hz
+
+TH[:,0]=compteurSD
+TH[:,9]=compteur1s
+TH[:,-1]=compteur100Hz
+
+T2[:,0]=compteurSD
+T2[:,3]=compteur1s
+T2[:,-1]=compteur100Hz
+
+AirDataSensors[:,0]=compteurSD
+AirDataSensors[:,5]=compteur1s
+AirDataSensors[:,-1]=compteur100Hz
+
+Pressures[:,0]=compteurSDv2
+Pressures[:,25]=compteur1sv2
+Pressures[:,-1]=compteur100Hzv2
+
+PaquetWind[:,0]=compteurSD
+PaquetWind[:,4]=compteur1s
+PaquetWind[:,-1]=compteur100Hz
+
+Pattern[:,27]=matrix[:,497]
+Pattern[:,28]=matrix[:,498]
+Pattern[:,29]=matrix[:,503]
+Pattern[:,30]=matrix[:,504]
+
+# 
+
+Result_adnav=(np.tile((AD_NAVIGATION[:,3]*1e6)+ AD_NAVIGATION[:,4]/1e3,(10,1)).T+np.tile(np.arange(0,10),(line_count,1))).T
+
 
 
 print(AD_NAVIGATION[-1:]) # Affichage des 5 dernières lignes de la table AD_NAVIGATION
 print(IMU[-1:]) # Affichage des 5 dernières lignes de la table IMU
 print(PaquetAirData[-1:]) # Affichage des 5 dernières lignes de la table PaquetAirData
+
+pd.DataFrame(AD_NAVIGATION[-100:], columns=AD_NAVIGATION_LABEL).to_csv('AD_NAVIGATION.csv', index=False)
+pd.DataFrame(IMU[-100:], columns=IMU_label).to_csv('IMU.csv', index=False)
+pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('PaquetAirData.csv', index=False)
 
 
 
