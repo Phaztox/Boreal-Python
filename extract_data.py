@@ -14,7 +14,7 @@ def extract_data(file_path, offset1, offset2):
     matrix = data[start:end].reshape((line_count, 1024))
     return matrix
 
-extract_data('MomentaVol5_clean.bin', 1, 0)
+extract_data("C:\\Users\\Antonin\\Desktop\\Antonin\\folder bin\\MomentaVol5_clean.bin", 1, 0)
     
 # creation des tables et de celles de 'label'
 AD_NAVIGATION_LABEL = ['Time','SystStatus','FilterStatus','Unixtime','MicroSecondes','Latitude(Rad)',
@@ -156,6 +156,12 @@ def dec2single(*cols):
         byte_array[:, i] = matrix[:, col]
     return np.array([struct.unpack('<f', byte_array[i].tobytes())[0] for i in range(byte_array.shape[0])])
 
+compteur1s = extract_uint64(495, 496)  # Compteur 1s
+compteur1sv2 = np.tile(compteur1s, 10)  # version 10 Hz
+compteurSD = extract_uint64(499, 500, 501, 502)  # compteur SD
+compteur100Hzv2 = np.tile(compteurSD, 10)  # version 10 Hz
+
+AD_NAVIGATION[:,0] = compteurSD
 AD_NAVIGATION[:,1] = extract_uint64(0, 1)  # Sys Status
 AD_NAVIGATION[:,2] = extract_uint64(2, 3)  # Filter Status
 AD_NAVIGATION[:,3] = extract_uint64(4, 5, 6, 7)  # Unix Time
@@ -170,8 +176,48 @@ AD_NAVIGATION[:,11] = dec2single(48, 49, 50, 51)  # Acceleration X
 AD_NAVIGATION[:,12] = dec2single(52, 53, 54, 55)  # Acceleration Y
 AD_NAVIGATION[:,13] = dec2single(56, 57, 58, 59)  # Acceleration Z
 AD_NAVIGATION[:,14] = dec2single(60, 61, 62, 63)  # G
+AD_NAVIGATION[:,15] = dec2single(64, 65, 66, 67)  # Roll
+AD_NAVIGATION[:,16] = dec2single(68, 69, 70, 71)  # Pitch
+AD_NAVIGATION[:,17] = dec2single(72, 73, 74, 75)  # Heading
+AD_NAVIGATION[:,18] = dec2single(76, 77, 78, 79)  # Angular Velocity X
+AD_NAVIGATION[:,19] = dec2single(80, 81, 82, 83)  # Angular Velocity Y
+AD_NAVIGATION[:,20] = dec2single(84, 85, 86, 87)  # Angular Velocity Z
+AD_NAVIGATION[:,21] = dec2single(88, 89, 90, 91)  # Latitude Standard Deviation
+AD_NAVIGATION[:,22] = dec2single(92, 93, 94, 95)  # Longitude Standard Deviation
+AD_NAVIGATION[:,23] = dec2single(96, 97, 98, 99)  # Height Standard Deviation
+# 
+IMU[:,0] = compteurSD 
+IMU[:,1] = dec2single(100, 101, 102, 103)  # Xaccl
+IMU[:,2] = dec2single(104, 105, 106, 107)  # Yaccl
+IMU[:,3] = dec2single(108, 109, 110, 111)  # Zaccl
+IMU[:,4] = dec2single(112, 113, 114, 115)  # Xgyro
+IMU[:,5] = dec2single(116, 117, 118, 119)  # Ygyro
+IMU[:,6] = dec2single(120, 121, 122, 123)  # Zgyro
+IMU[:,7] = dec2single(124, 125, 126, 127)  # Xmagn
+IMU[:,8] = dec2single(128, 129, 130, 131)  # Ymagn
+IMU[:,9] = dec2single(132, 133, 134, 135)  # Zmagn
+IMU[:,10] = dec2single(136, 137, 138, 139) # Temperature IMU
+IMU[:,11] = dec2single(140, 141, 142, 143) # Barometer
+IMU[:,12] = dec2single(144, 145, 146, 147) # Temperature Pressure
+IMU[:,13] = compteur1s  # Compteur 1s
+IMU[:,14] = AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4]/1e3
+
+# Result.IMU(:,16) =((IMU(:,2)).^2 +(IMU(:,3)).^2 +(IMU(:,4)).^2).^0.5; a coder en python 
+IMU[:,15] = np.sqrt(IMU[:,1]**2 + IMU[:,2]**2 + IMU[:,3]**2)  # QuadSum
+#
+PaquetAirData[:,0] = compteurSD 
+PaquetAirData[:,1] = dec2single(148, 149, 150, 151)  # Barometric Altitude delay (s)
+PaquetAirData[:,2] = dec2single(152, 153, 154, 155)  # Air Speed delay (s)
+PaquetAirData[:,3] = dec2single(156, 157, 158, 159)  # Bar Altitude (m)
+PaquetAirData[:,4] = dec2single(168, 169, 170, 171)  # Air Speed (m/s)
+PaquetAirData[:,5] = dec2single(164, 165, 166, 167)  # Barometric  Standard Deviation
+PaquetAirData[:,6] = dec2single(168, 169, 170, 171)  # Air Speed Standard Deviation
+PaquetAirData[:,7] = matrix[:,172] # Status
+
 
 print(AD_NAVIGATION[-1:]) # Affichage des 5 dernières lignes de la table AD_NAVIGATION
+print(IMU[-1:]) # Affichage des 5 dernières lignes de la table IMU
+print(PaquetAirData[-1:]) # Affichage des 5 dernières lignes de la table PaquetAirData
 
 
 
