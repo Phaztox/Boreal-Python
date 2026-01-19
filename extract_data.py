@@ -4,6 +4,7 @@ import struct
 from scipy.io import loadmat
 import h5py
 import pandas as pd
+import os
 
 # fonction permettant d'ouvrir un fichier binaire écrit en hexadécimal, de l'enregistrer dans un tableau 2d et d'afficher le contenu d'une ligne ou d'une colonne en sachant qu'une ligne fait 1024 octets
 def extract_data(file_path, offset1, offset2):
@@ -276,6 +277,14 @@ Pattern[:,3]=matrix[:,256] # CC
 Pattern[:,4]=matrix[:,257] # DD
 Pattern[:,5]=matrix[:,266] # EE
 Pattern[:,6]=matrix[:,267] # AA
+Pattern[:,7]=matrix[:,271] # 22
+Pattern[:,8]=matrix[:,272] # 22
+Pattern[:,9]=matrix[:,293] # 33
+Pattern[:,10]=matrix[:,294] # 33
+Pattern[:,11]=matrix[:,315] # 44
+Pattern[:,12]=matrix[:,316] # 44    
+Pattern[:,13]=matrix[:,337] # 55
+Pattern[:,14]=matrix[:,338] # 55
 Pattern[:,27]=matrix[:,497]
 Pattern[:,28]=matrix[:,498]
 Pattern[:,29]=matrix[:,503]
@@ -283,33 +292,32 @@ Pattern[:,30]=matrix[:,504]
 
 # CALCULS PRESSION
 # Pression Statique 1&2
-pression_brute0=extract_uint64_reverse(236, 237) 
-pression_brute1=extract_uint64_reverse(238, 239)
+pression_statique_brute1_0=extract_uint64_reverse(236, 237) 
+pression_statique_brute1_1=extract_uint64_reverse(238, 239)
 val0=(24575-2730)/(1100-600) 
-result_pression0=(pression_brute0-2730)/val0+600
-result_pression1=(pression_brute1-2730)/val0+600
-
+result_pression1_0=(pression_statique_brute1_0-2730)/val0+600
+result_pression1_1=(pression_statique_brute1_1-2730)/val0+600
 # HCEM diff pressure 1
-pression_brute2=extract_uint64_reverse(240, 241)
-pression_brute3=extract_uint64_reverse(242, 243)
-pression_brute4=extract_uint64_reverse(244, 245)
-pression_brute5=extract_uint64_reverse(246, 247)
+pression_HCEM1_brute2=extract_uint64_reverse(240, 241)
+pression_HCEM1_brute3=extract_uint64_reverse(242, 243)
+pression_HCEM1_brute4=extract_uint64_reverse(244, 245)
+pression_HCEM1_brute5=extract_uint64_reverse(246, 247)
 val1=(24575-2730)/50 # +/- 50 mb
-result_pression2=(pression_brute2-2730)/val1  # diff pression HCEM
-result_pression3=(pression_brute3-2730)/val1
-result_pression4=(pression_brute4-2730)/val1
-result_pression5=(pression_brute5-2730)/val1
+result_pression_HCEM1_2=(pression_HCEM1_brute2-2730)/val1  # diff pression HCEM
+result_pression_HCEM1_3=(pression_HCEM1_brute3-2730)/val1
+result_pression_HCEM1_4=(pression_HCEM1_brute4-2730)/val1
+result_pression_HCEM1_5=(pression_HCEM1_brute5-2730)/val1
 
 # Diff Pressure HCE10 1
-pression_brute6=extract_uint64_reverse(248, 249)
-pression_brute7=extract_uint64_reverse(250, 251)
-pression_brute8=extract_uint64_reverse(252, 253)
-pression_brute9=extract_uint64_reverse(254, 255)
+pression_HCE101_brute6=extract_uint64_reverse(248, 249)
+pression_HCE101_brute7=extract_uint64_reverse(250, 251)
+pression_HCE101_brute8=extract_uint64_reverse(252, 253)
+pression_HCE101_brute9=extract_uint64_reverse(254, 255)
 val2=(24575-2730)/20 
-result_pression6=(pression_brute6-2730)/val2-10
-result_pression7=(pression_brute7-2730)/val2-10
-result_pression8=(pression_brute8-2730)/val2-10
-result_pression9=(pression_brute9-2730)/val2-10
+result_pression_HCE101_6=(pression_HCE101_brute6-2730)/val2-10
+result_pression_HCE101_7=(pression_HCE101_brute7-2730)/val2-10
+result_pression_HCE101_8=(pression_HCE101_brute8-2730)/val2-10
+result_pression_HCE101_9=(pression_HCE101_brute9-2730)/val2-10
 
 # Diff Pressure LDE 1
 pression_brute_LDE1_1=extract_uint64_reverse(199, 200)
@@ -374,20 +382,121 @@ pression_brute_LDE10_2=pression_brute_LDE10_2/6000
 # SHT 85 
 SHT1_temp=extract_uint64_reverse(258, 259)
 SHT1_hum=extract_uint64_reverse(260, 261)
-T1=-45+165*SHT1_temp/(2**16-1)
-H1=100*SHT1_hum/(2**16-1)
-TH[:,5]=T1
-TH[:,6]=H1
+T1_SHT=-45+165*SHT1_temp/(2**16-1)
+H1_SHT=100*SHT1_hum/(2**16-1)
+TH[:,5]=T1_SHT
+TH[:,6]=H1_SHT
 
 SHT2_temp=extract_uint64_reverse(262, 263)
 SHT2_hum=extract_uint64_reverse(264, 265)
-T2=-45+165*SHT2_temp/(2**16-1)
-H2=100*SHT2_hum/(2**16-1)
-TH[:,7]=T2
-TH[:,8]=H2
+T2_SHT=-45+165*SHT2_temp/(2**16-1)  # Renamed to avoid overwriting T2 array
+H2_SHT=100*SHT2_hum/(2**16-1)
+TH[:,7]=T2_SHT
+TH[:,8]=H2_SHT
 
 # PT100
-a
+# Convertir les deux colonnes en binaire et traiter bit par bit
+col_h = matrix[:, 268].astype(np.uint8)
+col_l = matrix[:, 269].astype(np.uint8)
+a = np.array([format(x, '08b') for x in col_h])  # 8 bits pour col 268
+b = np.array([format(x, '08b') for x in col_l])  # 8 bits pour col 269
+a2_str = np.array([a[i] + b[i] for i in range(len(a))])  # Concatener les deux: a2 = "aaaaaaaa" + "bbbbbbbb"
+a2 = np.array([[int(c) for c in s] for s in a2_str])  # Convertir les chaînes binaires en arrays numériques
+a3 = np.sum(a2[:, 1:9] * (2 ** np.arange(7, -1, -1)), axis=1)  # a3 = sum(a2(:,2:9).*2.^(7:-1:0)) -> colonnes 2-9 en MATLAB = indices 1-8 en Python
+a4 = np.concatenate([np.zeros((a2.shape[0], 1)), a2[:, 9:]], axis=1)  # a4 = [zeros(...) a2(:,10:end)] -> colonnes 10-end en MATLAB = indices 9-end en Python
+b3 = np.sum(a4 * (2 ** np.arange(7, -1, -1)), axis=1)  # b3 = sum(a4.*2.^(7:-1:0))
+T2_raw = a3 * 128 + b3  # digi1 = a3*128 + b3
+T2_temp = T2_raw / 32.0 - 256.0  # Conversion en température
+T2[:, 1] = T2_raw  # Remplir le tableau T2
+T2[:, 2] = T2_temp
+
+# Pression statique 2
+pression_statique_brute2_0=extract_uint64_reverse(273, 274)  
+pression_statique_brute2_1=extract_uint64_reverse(275, 276)  
+val3=(24575-2730)/(1100-600)
+result_pression_statique2_0=(pression_statique_brute2_0-2730)/val3+600
+result_pression_statique2_1=(pression_statique_brute2_1-2730)/val3+600
+# HCEM 2
+pression_HCEM2_brute2=extract_uint64_reverse(277, 278)  
+pression_HCEM2_brute3=extract_uint64_reverse(279, 280)
+pression_HCEM2_brute4=extract_uint64_reverse(281, 282)  
+pression_HCEM2_brute5=extract_uint64_reverse(283, 284)
+val4=(24575-2730)/50
+result_pression_HCEM2_2=(pression_HCEM2_brute2-2730)/val4
+result_pression_HCEM2_3=(pression_HCEM2_brute3-2730)/val4
+result_pression_HCEM2_4=(pression_HCEM2_brute4-2730)/val4
+result_pression_HCEM2_5=(pression_HCEM2_brute5-2730)/val4
+
+# Diff Pressure HCE10 2
+pression_HCE102_brute6=extract_uint64_reverse(285, 286)  
+pression_HCE102_brute7=extract_uint64_reverse(287, 288)
+pression_HCE102_brute8=extract_uint64_reverse(289, 290)
+pression_HCE102_brute9=extract_uint64_reverse(291, 292)
+val5=(24575-2730)/20
+result_pression_HCE102_6=(pression_HCE102_brute6-2730)/val5-10
+result_pression_HCE102_7=(pression_HCE102_brute7-2730)/val5-10
+result_pression_HCE102_8=(pression_HCE102_brute8-2730)/val5-10
+result_pression_HCE102_9=(pression_HCE102_brute9-2730)/val5-10
+
+# pression statique 3
+pression_statique_brute3_0=extract_uint64_reverse(295, 296)  
+pression_statique_brute3_1=extract_uint64_reverse(297, 298) 
+val6=(24575-2730)/(1100-600)
+result_pression_statique3_0=(pression_statique_brute3_0-2730)/val6+600
+result_pression_statique3_1=(pression_statique_brute3_1-2730)/val6+600
+# HCEM 3
+pression_HCEM3_brute2=extract_uint64_reverse(299, 300)  
+pression_HCEM3_brute3=extract_uint64_reverse(301, 302)
+pression_HCEM3_brute4=extract_uint64_reverse(303, 304)  
+pression_HCEM3_brute5=extract_uint64_reverse(305, 306)
+val7=(24575-2730)/50
+result_pression_HCEM3_2=(pression_HCEM3_brute2-2730)/val7
+result_pression_HCEM3_3=(pression_HCEM3_brute3-2730)/val7
+result_pression_HCEM3_4=(pression_HCEM3_brute4-2730)/val7
+result_pression_HCEM3_5=(pression_HCEM3_brute5-2730)/val7
+
+# Diff Pressure HCE10 3
+pression_HCE103_6=extract_uint64_reverse(307, 308)
+pression_HCE103_7=extract_uint64_reverse(309, 310)
+pression_HCE103_8=extract_uint64_reverse(311, 312)
+pression_HCE103_9=extract_uint64_reverse(313, 314)
+val8=(24575-2730)/20
+result_pression_HCE103_6=(pression_HCE103_6-2730)/val8-10
+result_pression_HCE103_7=(pression_HCE103_7-2730)/val8-10
+result_pression_HCE103_8=(pression_HCE103_8-2730)/val8-10
+result_pression_HCE103_9=(pression_HCE103_9-2730)/val8-10
+
+# Pression statique 4
+pression_statique_brute4_0=extract_uint64_reverse(317, 318)
+pression_statique_brute4_1=extract_uint64_reverse(319, 320)
+val9=(24575-2730)/(1100-600)
+result_pression_statique4_0=(pression_statique_brute4_0-2730)/val9+600
+result_pression_statique4_1=(pression_statique_brute4_1-2730)/val9+600
+# HCEM 4
+pression_HCEM4_brute2=extract_uint64_reverse(321, 322)
+pression_HCEM4_brute3=extract_uint64_reverse(323, 324)
+pression_HCEM4_brute4=extract_uint64_reverse(325, 326)
+pression_HCEM4_brute5=extract_uint64_reverse(327, 328)
+val10=(24575-2730)/50
+result_pression_HCEM4_2=(pression_HCEM4_brute2-2730)/val10
+result_pression_HCEM4_3=(pression_HCEM4_brute3-2730)/val10
+result_pression_HCEM4_4=(pression_HCEM4_brute4-2730)/val10
+result_pression_HCEM4_5=(pression_HCEM4_brute5-2730)/val10
+
+# Diff Pressure HCE10 4
+pression_HCE104_6=extract_uint64_reverse(329, 330)
+pression_HCE104_7=extract_uint64_reverse(331, 332)
+pression_HCE104_8=extract_uint64_reverse(333, 334)
+pression_HCE104_9=extract_uint64_reverse(335, 336)
+val11=(24575-2730)/20
+result_pression_HCE104_6=(pression_HCE104_6-2730)/val11-10
+result_pression_HCE104_7=(pression_HCE104_7-2730)/val11-10
+result_pression_HCE104_8=(pression_HCE104_8-2730)/val11-10
+result_pression_HCE104_9=(pression_HCE104_9-2730)/val11-10
+
+"""
+JEN ETAIS LA, FAUT FAIRE LA PRESSION STATIQUE 5 COMME LES 4 PRECEDENTES
+"""
 
 
 
@@ -399,9 +508,13 @@ print(AD_NAVIGATION[-1:]) # Affichage des 5 dernières lignes de la table AD_NAV
 print(IMU[-1:]) # Affichage des 5 dernières lignes de la table IMU
 print(PaquetAirData[-1:]) # Affichage des 5 dernières lignes de la table PaquetAirData
 
-pd.DataFrame(AD_NAVIGATION[-100:], columns=AD_NAVIGATION_LABEL).to_csv('AD_NAVIGATION.csv', index=False)
-pd.DataFrame(IMU[-100:], columns=IMU_label).to_csv('IMU.csv', index=False)
-pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('PaquetAirData.csv', index=False)
+# Créer le dossier s'il n'existe pas
+os.makedirs('resultats_test', exist_ok=True)
+
+pd.DataFrame(AD_NAVIGATION[-100:], columns=AD_NAVIGATION_LABEL).to_csv('resultats_test/AD_NAVIGATION.csv', index=False)
+pd.DataFrame(IMU[-100:], columns=IMU_label).to_csv('resultats_test/IMU.csv', index=False)
+pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('resultats_test/PaquetAirData.csv', index=False)
+pd.DataFrame(T2[-100:], columns=T2_label).to_csv('resultats_test/T2.csv', index=False)
 
 
 
