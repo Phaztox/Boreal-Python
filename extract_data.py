@@ -40,7 +40,7 @@ AirDataSensors_label=['Time','AbsolutePressure(Pa)','DifferentialPressure(Pa)',
 AirDataSensors = np.zeros((line_count,len(AirDataSensors_label)))
 
 IMU_label = ['Time','Xaccl', 'Yaccl', 'Zaccl','Xgyro', 'Ygyro', 'Zgyro', 'Xmagn', 'Ymagn', 
-                'Zmagn', 'TemperatureIMU','Barometer','TemperaturePressure','Secondes','TSmilli','QuadSum','Compteur100hz']
+                'Zmagn', 'TemperatureIMU','Barometer','TemperaturePressure','Secondes','TSmilli','Compteur100hz']
 IMU = np.zeros((line_count,len(IMU_label)))
 
 Pattern_label = ['Time','AA','BB', 'CC','DD','EE','AA','22','22','33','33','44','44','55','55','66',
@@ -230,7 +230,7 @@ PaquetAirData[:,5] = dec2single(164, 165, 166, 167)  # Barometric  Standard Devi
 PaquetAirData[:,6] = dec2single(168, 169, 170, 171)  # Air Speed Standard Deviation
 PaquetAirData[:,7] = matrix[:,172] # Status
 PaquetAirData[:,8] = compteur1s
-
+PaquetAirData[:,9] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmili
 PaquetAirData[:,-1] = compteur100Hz  # Compteur 100hz
 
 
@@ -252,6 +252,10 @@ T2[:,3]=compteur1s
 T2[:,-1]=compteur100Hz
 
 AirDataSensors[:,0]=compteurSD
+AirDataSensors[:,1]=dec2single(185, 186, 187, 188) # Absolute Pressure (Pa)
+AirDataSensors[:,2]=dec2single(189, 190, 191, 192) # Differential Pressure (Pa)
+AirDataSensors[:,3]=matrix[:,193] # Status
+AirDataSensors[:,4]=dec2single(194, 195, 196, 197) # Temperature (°C)
 AirDataSensors[:,5]=compteur1s
 AirDataSensors[:,-1]=compteur100Hz
 
@@ -260,15 +264,132 @@ Pressures[:,25]=compteur1sv2
 Pressures[:,-1]=compteur100Hzv2
 
 PaquetWind[:,0]=compteurSD
+PaquetWind[:,1]=dec2single(173, 174, 175, 176) # Wind Velocity North (m/s)
+PaquetWind[:,2]=dec2single(177, 178, 179, 180) # Wind Velocity East (m/s)
+PaquetWind[:,3]=dec2single(181, 182, 183, 184) # Wind Velocity Standard Deviation (m/s)
 PaquetWind[:,4]=compteur1s
 PaquetWind[:,-1]=compteur100Hz
 
+Pattern[:,1]=matrix[:,234] # AA
+Pattern[:,2]=matrix[:,235] # BB
+Pattern[:,3]=matrix[:,256] # CC
+Pattern[:,4]=matrix[:,257] # DD
+Pattern[:,5]=matrix[:,266] # EE
+Pattern[:,6]=matrix[:,267] # AA
 Pattern[:,27]=matrix[:,497]
 Pattern[:,28]=matrix[:,498]
 Pattern[:,29]=matrix[:,503]
 Pattern[:,30]=matrix[:,504]
 
-# 
+# CALCULS PRESSION
+# Pression Statique 1&2
+pression_brute0=extract_uint64_reverse(236, 237) 
+pression_brute1=extract_uint64_reverse(238, 239)
+val0=(24575-2730)/(1100-600) 
+result_pression0=(pression_brute0-2730)/val0+600
+result_pression1=(pression_brute1-2730)/val0+600
+
+# HCEM diff pressure 1
+pression_brute2=extract_uint64_reverse(240, 241)
+pression_brute3=extract_uint64_reverse(242, 243)
+pression_brute4=extract_uint64_reverse(244, 245)
+pression_brute5=extract_uint64_reverse(246, 247)
+val1=(24575-2730)/50 # +/- 50 mb
+result_pression2=(pression_brute2-2730)/val1  # diff pression HCEM
+result_pression3=(pression_brute3-2730)/val1
+result_pression4=(pression_brute4-2730)/val1
+result_pression5=(pression_brute5-2730)/val1
+
+# Diff Pressure HCE10 1
+pression_brute6=extract_uint64_reverse(248, 249)
+pression_brute7=extract_uint64_reverse(250, 251)
+pression_brute8=extract_uint64_reverse(252, 253)
+pression_brute9=extract_uint64_reverse(254, 255)
+val2=(24575-2730)/20 
+result_pression6=(pression_brute6-2730)/val2-10
+result_pression7=(pression_brute7-2730)/val2-10
+result_pression8=(pression_brute8-2730)/val2-10
+result_pression9=(pression_brute9-2730)/val2-10
+
+# Diff Pressure LDE 1
+pression_brute_LDE1_1=extract_uint64_reverse(199, 200)
+pression_brute_LDE1_2=extract_uint64_reverse(201, 202)
+result_pression_LDE1_1=pression_brute_LDE1_1/6000
+result_pression_LDE1_2=pression_brute_LDE1_2/6000
+
+# Diff Pressure LDE 2
+pression_brute_LDE2_1=extract_uint64_reverse(204, 205)
+pression_brute_LDE2_2=extract_uint64_reverse(206, 207)
+result_pression_LDE2_1=pression_brute_LDE2_1/6000
+result_pression_LDE2_2=pression_brute_LDE2_2/6000
+
+# Diff Pressure LDE 3
+pression_brute_LDE3_1=extract_uint64_reverse(209, 210)
+pression_brute_LDE3_2=extract_uint64_reverse(211, 212)
+pression_brute_LDE3_1=pression_brute_LDE3_1/6000
+pression_brute_LDE3_2=pression_brute_LDE3_2/6000
+
+# Diff Pressure LDE 4
+pression_brute_LDE4_1=extract_uint64_reverse(214, 215)
+pression_brute_LDE4_2=extract_uint64_reverse(216, 217)
+pression_brute_LDE4_1=pression_brute_LDE4_1/6000
+pression_brute_LDE4_2=pression_brute_LDE4_2/6000
+
+# Diff Pressure LDE 5
+pression_brute_LDE5_1=extract_uint64_reverse(219, 220)
+pression_brute_LDE5_2=extract_uint64_reverse(221, 222)
+pression_brute_LDE5_1=pression_brute_LDE5_1/6000
+pression_brute_LDE5_2=pression_brute_LDE5_2/6000
+
+# Diff Pressure LDE 6
+pression_brute_LDE6_1=extract_uint64_reverse(224, 225)
+pression_brute_LDE6_2=extract_uint64_reverse(226, 227)
+pression_brute_LDE6_1=pression_brute_LDE6_1/6000
+pression_brute_LDE6_2=pression_brute_LDE6_2/6000
+
+# Diff Pressure LDE 7
+pression_brute_LDE7_1=extract_uint64_reverse(229, 230)
+pression_brute_LDE7_2=extract_uint64_reverse(231, 232)
+pression_brute_LDE7_1=pression_brute_LDE7_1/6000
+pression_brute_LDE7_2=pression_brute_LDE7_2/6000
+
+# Diff Pressure LDE 8
+pression_brute_LDE8_1=extract_uint64_reverse(470, 471)
+pression_brute_LDE8_2=extract_uint64_reverse(472, 473)
+pression_brute_LDE8_1=pression_brute_LDE8_1/6000
+pression_brute_LDE8_2=pression_brute_LDE8_2/6000
+
+# Diff Pressure LDE 9
+pression_brute_LDE9_1=extract_uint64_reverse(475, 476)
+pression_brute_LDE9_2=extract_uint64_reverse(477, 478)
+pression_brute_LDE9_1=pression_brute_LDE9_1/6000
+pression_brute_LDE9_2=pression_brute_LDE9_2/6000
+
+# Diff Pressure LDE 10
+pression_brute_LDE10_1=extract_uint64_reverse(480, 481)
+pression_brute_LDE10_2=extract_uint64_reverse(482, 483)
+pression_brute_LDE10_1=pression_brute_LDE10_1/6000
+pression_brute_LDE10_2=pression_brute_LDE10_2/6000
+
+# SHT 85 
+SHT1_temp=extract_uint64_reverse(258, 259)
+SHT1_hum=extract_uint64_reverse(260, 261)
+T1=-45+165*SHT1_temp/(2**16-1)
+H1=100*SHT1_hum/(2**16-1)
+TH[:,5]=T1
+TH[:,6]=H1
+
+SHT2_temp=extract_uint64_reverse(262, 263)
+SHT2_hum=extract_uint64_reverse(264, 265)
+T2=-45+165*SHT2_temp/(2**16-1)
+H2=100*SHT2_hum/(2**16-1)
+TH[:,7]=T2
+TH[:,8]=H2
+
+# PT100
+a
+
+
 
 Result_adnav=(np.tile((AD_NAVIGATION[:,3]*1e6)+ AD_NAVIGATION[:,4]/1e3,(10,1)).T+np.tile(np.arange(0,10),(line_count,1))).T
 
