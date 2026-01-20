@@ -151,6 +151,14 @@ def extract_uint64_reverse(*cols):
         result += matrix[:, col].astype(dtype) * (2 ** shifts[i])
     return result
 
+def uin82int16(a, b):
+    """return the convertion from two uint 8 into their equivalent in int16"""
+    col_a = matrix[:, a].astype(np.uint16)
+    col_b = matrix[:, b].astype(np.uint16)
+    combined = (col_a << 8) | col_b
+    signed = combined.astype(np.int16)
+    return signed
+
 def dec2double(*cols):
     """look for the specified argument in the matrix and return it to double (float64)"""
     if len(cols) != 8:
@@ -172,11 +180,11 @@ def dec2single(*cols):
     return np.array([struct.unpack('<f', byte_array[i].tobytes())[0] for i in range(byte_array.shape[0])])
 
 compteur1s = extract_uint64_forward(495, 496)  # Compteur 1s
-compteur1sv2 = np.tile(compteur1s, 10).T  # version 10 Hz
+compteur1sv2 = compteur1s.repeat(10).T  # version 10 Hz
 compteurSD = extract_uint64_reverse(499, 500, 501, 502)  # compteur SD
-compteurSDv2 = np.tile(compteurSD, 10).T  # version 10 Hz
+compteurSDv2 = compteurSD.repeat(10).T  # version 10 Hz
 compteur100Hz = extract_uint64_reverse(505, 506, 507, 508)  # Compteur 100Hz
-compteur100Hzv2 = np.tile(compteur100Hz, 10).T  # version 10 Hz
+compteur100Hzv2 = compteur100Hz.repeat(10).T  # version 10 Hz
 
 AD_NAVIGATION[:,0] = compteurSD
 AD_NAVIGATION[:,1] = extract_uint64_forward(0, 1)  # Sys Status
@@ -205,6 +213,8 @@ AD_NAVIGATION[:,23] = dec2single(96, 97, 98, 99)  # Height Standard Deviation
 AD_NAVIGATION[:,24] = compteur1s  # Secondes
 AD_NAVIGATION[:,25] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmili
 AD_NAVIGATION[:,26] = compteur100Hz  # Compteur 100hz
+
+Result_adnav = ((AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3).repeat(10).T
 # 
 IMU[:,0] = compteurSD
 IMU[:,1] = dec2single(100, 101, 102, 103)  # Xaccl
@@ -236,7 +246,6 @@ PaquetAirData[:,9] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmili
 PaquetAirData[:,-1] = compteur100Hz  # Compteur 100hz
 
 
-
 MOTUSRAW[:,0]=compteurSDv2
 MOTUSRAW[:,13]=compteur1sv2
 MOTUSRAW[:,-1]=compteur100Hzv2
@@ -263,6 +272,7 @@ AirDataSensors[:,-1]=compteur100Hz
 
 Pressures[:,0]=compteurSDv2
 Pressures[:,25]=compteur1sv2
+Pressures[:,26]=Result_adnav
 Pressures[:,-1]=compteur100Hzv2
 
 PaquetWind[:,0]=compteurSD
@@ -312,10 +322,10 @@ def processpressureLDE (start: int, n: int) -> None:
     Returns:
         None but will fill up the temporary variables
     """
-    Pressures_tempLDE1[:,1]=extract_uint64_reverse(start, start+1)
-    Pressures_tempLDE2[:,1]=extract_uint64_reverse(start+2, start+3)
-    Result_tempLDE1[:,1]=Pressures_tempLDE1[:,1]/6000
-    Result_tempLDE2[:,1]=Pressures_tempLDE2[:,1]/6000
+    Pressures_tempLDE1[:,n-1]=uin82int16(start, start+1)
+    Pressures_tempLDE2[:,n-1]=uin82int16(start+2, start+3)
+    Result_tempLDE1[:,n-1]=Pressures_tempLDE1[:,n-1]/6000
+    Result_tempLDE2[:,n-1]=Pressures_tempLDE2[:,n-1]/6000
     return
 
 processpressureLDE(199,1)
@@ -328,11 +338,18 @@ processpressureLDE(229,7)
 processpressureLDE(470,8)
 processpressureLDE(475,9)
 processpressureLDE(480,10)
-
+"""
 Pressures_tempLDE1=Pressures_tempLDE1.T
 Pressures_tempLDE2=Pressures_tempLDE2.T
 Result_tempLDE1=Result_tempLDE1.T
 Result_tempLDE2=Result_tempLDE2.T
+"""
+
+# Remplir Pressures avec les données LDE
+Pressures[:,21]=Pressures_tempLDE1.flatten()
+Pressures[:,22]=Pressures_tempLDE2.flatten()
+Pressures[:,23]=Result_tempLDE1.flatten()
+Pressures[:,24]=Result_tempLDE2.flatten()
 
 # SHT 85 
 SHT1_temp=extract_uint64_reverse(258, 259)
@@ -387,7 +404,7 @@ def processpressure(start: int, n: int) -> None:
             globals()[var_name][:, n-1]=extract_uint64_reverse(start+i*2, start+i*2+1)
             globals()[res_name][:, n-1]=(globals()[var_name][:, n-1]-2730)/val1
         else :
-            globals()[var_name][:, n-1]=extract_uint64_reverse(start+i*2, start+i*2+1)
+            globals()[var_name][:, n-1]=uin82int16(start+i*2, start+i*2+1)
             globals()[res_name][:, n-1]=(globals()[var_name][:, n-1]-2730)/val2-10
     return
 
@@ -396,17 +413,12 @@ processpressure(273, 2)
 processpressure(295, 3)
 processpressure(317, 4)
 processpressure(339, 5)
-processpressure(362, 6)
+processpressure(361, 6)
 processpressure(383, 7)
 processpressure(405, 8)
 processpressure(427, 9)
 processpressure(449, 10)
 
-for i in range(10):
-    n1=f'Pressures{i}_temp'
-    n2=f'Result{i}_temp'
-    globals()[n1]=globals()[n1].T
-    globals()[n2]=globals()[n2].T
 
 for i in range(10):
     n1=f'Pressures{i}_temp'
@@ -416,17 +428,6 @@ for i in range(10):
 
 
 
-
-
-Result_adnav=(np.tile((AD_NAVIGATION[:,3]*1e6)+ AD_NAVIGATION[:,4]/1e3,(10,1)).T+np.tile(np.arange(0,10),(line_count,1))).T
-
-
-"""
-print(AD_NAVIGATION[-1:]) # Affichage des 5 dernières lignes de la table AD_NAVIGATION
-print(IMU[-1:]) # Affichage des 5 dernières lignes de la table IMU
-print(PaquetAirData[-1:]) # Affichage des 5 dernières lignes de la table PaquetAirData
-"""
-
 # Créer le dossier s'il n'existe pas
 os.makedirs('resultats_test', exist_ok=True)
 
@@ -435,12 +436,11 @@ pd.DataFrame(IMU[-100:], columns=IMU_label).to_csv('resultats_test/IMU.csv', ind
 pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('resultats_test/PaquetAirData.csv', index=False)
 pd.DataFrame(T2[-100:], columns=T2_label).to_csv('resultats_test/T2.csv', index=False)
 pd.DataFrame(TH[-100:], columns=TH_label).to_csv('resultats_test/TH.csv', index=False)
-pd.DataFrame(Pressures, columns=Pressures_label).to_csv('resultats_test/Pressures.csv', index=False)
+pd.DataFrame(Pressures[-100:], columns=Pressures_label).to_csv('resultats_test/Pressures.csv', index=False)
 
 print(len(Pressures))
 
 
-# A FIX, LE PRESSURES QUI EST EN DESORDRE, LES LDE QUI SONT PQS IMPLEMENTES DANS LE PRESSURES
 
 
 
