@@ -20,7 +20,8 @@ def extract_data(file_path, offset1, offset2):
     return matrix
 
 extract_data("C:\\Users\\Antonin\\Desktop\\Antonin\\folder bin\\MomentaVol5_clean.bin", 1, 0)
-    
+# extract_data("C:\\Users\\Antonin\\Desktop\\Anto Projet\\MomentaVol5_small.bin", 1, 0)
+
 # creation des tables et de celles de 'label'
 AD_NAVIGATION_LABEL = ['Time','SystStatus','FilterStatus','Unixtime','MicroSecondes','Latitude(Rad)',
                     'Longitude(Rad)','Height','VitesseNord','VitesseEast','VitesseDown',
@@ -94,7 +95,7 @@ Result8_temp = np.zeros((line_count, 10))
 Result9_temp = np.zeros((line_count, 10))
 
 Pressures_tempLDE1 = np.zeros((line_count, 10))
-PressurestempLDE2 = np.zeros((line_count, 10))
+Pressures_tempLDE2 = np.zeros((line_count, 10))
 Result_tempLDE1 = np.zeros((line_count, 10))
 Result_tempLDE2 = np.zeros((line_count, 10))
 
@@ -285,99 +286,53 @@ Pattern[:,11]=matrix[:,315] # 44
 Pattern[:,12]=matrix[:,316] # 44    
 Pattern[:,13]=matrix[:,337] # 55
 Pattern[:,14]=matrix[:,338] # 55
-Pattern[:,27]=matrix[:,497]
-Pattern[:,28]=matrix[:,498]
-Pattern[:,29]=matrix[:,503]
-Pattern[:,30]=matrix[:,504]
+Pattern[:,15]=matrix[:,359] # 66
+Pattern[:,16]=matrix[:,360] # 66
+Pattern[:,17]=matrix[:,381] # 77
+Pattern[:,18]=matrix[:,382] # 77
+Pattern[:,19]=matrix[:,403] # 88
+Pattern[:,20]=matrix[:,404] # 88
+Pattern[:,21]=matrix[:,425] # 99
+Pattern[:,22]=matrix[:,426] # 99
+Pattern[:,23]=matrix[:,447] # AA
+Pattern[:,24]=matrix[:,448] # AA
+Pattern[:,25]=matrix[:,493] # C0
+Pattern[:,26]=matrix[:,494] # 01
+Pattern[:,27]=matrix[:,497] # C5
+Pattern[:,28]=matrix[:,498] # 12
+Pattern[:,29]=matrix[:,503] # C1
+Pattern[:,30]=matrix[:,504] # 00
 
-# CALCULS PRESSION
-# Pression Statique 1&2
-pression_statique_brute1_0=extract_uint64_reverse(236, 237) 
-pression_statique_brute1_1=extract_uint64_reverse(238, 239)
-val0=(24575-2730)/(1100-600) 
-result_pression1_0=(pression_statique_brute1_0-2730)/val0+600
-result_pression1_1=(pression_statique_brute1_1-2730)/val0+600
-# HCEM diff pressure 1
-pression_HCEM1_brute2=extract_uint64_reverse(240, 241)
-pression_HCEM1_brute3=extract_uint64_reverse(242, 243)
-pression_HCEM1_brute4=extract_uint64_reverse(244, 245)
-pression_HCEM1_brute5=extract_uint64_reverse(246, 247)
-val1=(24575-2730)/50 # +/- 50 mb
-result_pression_HCEM1_2=(pression_HCEM1_brute2-2730)/val1  # diff pression HCEM
-result_pression_HCEM1_3=(pression_HCEM1_brute3-2730)/val1
-result_pression_HCEM1_4=(pression_HCEM1_brute4-2730)/val1
-result_pression_HCEM1_5=(pression_HCEM1_brute5-2730)/val1
+def processpressureLDE (start: int, n: int) -> None:
+    """
+    Function made to process LDE's pressure group
+    Args:
+        start (int): Index of the column we start from for LDE pressure data processing.
+        n (int): The number corresponding to the group of pression LDE (1-10)
+    Returns:
+        None but will fill up the temporary variables
+    """
+    Pressures_tempLDE1[:,1]=extract_uint64_reverse(start, start+1)
+    Pressures_tempLDE2[:,1]=extract_uint64_reverse(start+2, start+3)
+    Result_tempLDE1[:,1]=Pressures_tempLDE1[:,1]/6000
+    Result_tempLDE2[:,1]=Pressures_tempLDE2[:,1]/6000
+    return
 
-# Diff Pressure HCE10 1
-pression_HCE101_brute6=extract_uint64_reverse(248, 249)
-pression_HCE101_brute7=extract_uint64_reverse(250, 251)
-pression_HCE101_brute8=extract_uint64_reverse(252, 253)
-pression_HCE101_brute9=extract_uint64_reverse(254, 255)
-val2=(24575-2730)/20 
-result_pression_HCE101_6=(pression_HCE101_brute6-2730)/val2-10
-result_pression_HCE101_7=(pression_HCE101_brute7-2730)/val2-10
-result_pression_HCE101_8=(pression_HCE101_brute8-2730)/val2-10
-result_pression_HCE101_9=(pression_HCE101_brute9-2730)/val2-10
+processpressureLDE(199,1)
+processpressureLDE(204,2)
+processpressureLDE(209,3)
+processpressureLDE(214,4)
+processpressureLDE(219,5)
+processpressureLDE(224,6)
+processpressureLDE(229,7)
+processpressureLDE(470,8)
+processpressureLDE(475,9)
+processpressureLDE(480,10)
 
-# Diff Pressure LDE 1
-pression_brute_LDE1_1=extract_uint64_reverse(199, 200)
-pression_brute_LDE1_2=extract_uint64_reverse(201, 202)
-result_pression_LDE1_1=pression_brute_LDE1_1/6000
-result_pression_LDE1_2=pression_brute_LDE1_2/6000
-
-# Diff Pressure LDE 2
-pression_brute_LDE2_1=extract_uint64_reverse(204, 205)
-pression_brute_LDE2_2=extract_uint64_reverse(206, 207)
-result_pression_LDE2_1=pression_brute_LDE2_1/6000
-result_pression_LDE2_2=pression_brute_LDE2_2/6000
-
-# Diff Pressure LDE 3
-pression_brute_LDE3_1=extract_uint64_reverse(209, 210)
-pression_brute_LDE3_2=extract_uint64_reverse(211, 212)
-pression_brute_LDE3_1=pression_brute_LDE3_1/6000
-pression_brute_LDE3_2=pression_brute_LDE3_2/6000
-
-# Diff Pressure LDE 4
-pression_brute_LDE4_1=extract_uint64_reverse(214, 215)
-pression_brute_LDE4_2=extract_uint64_reverse(216, 217)
-pression_brute_LDE4_1=pression_brute_LDE4_1/6000
-pression_brute_LDE4_2=pression_brute_LDE4_2/6000
-
-# Diff Pressure LDE 5
-pression_brute_LDE5_1=extract_uint64_reverse(219, 220)
-pression_brute_LDE5_2=extract_uint64_reverse(221, 222)
-pression_brute_LDE5_1=pression_brute_LDE5_1/6000
-pression_brute_LDE5_2=pression_brute_LDE5_2/6000
-
-# Diff Pressure LDE 6
-pression_brute_LDE6_1=extract_uint64_reverse(224, 225)
-pression_brute_LDE6_2=extract_uint64_reverse(226, 227)
-pression_brute_LDE6_1=pression_brute_LDE6_1/6000
-pression_brute_LDE6_2=pression_brute_LDE6_2/6000
-
-# Diff Pressure LDE 7
-pression_brute_LDE7_1=extract_uint64_reverse(229, 230)
-pression_brute_LDE7_2=extract_uint64_reverse(231, 232)
-pression_brute_LDE7_1=pression_brute_LDE7_1/6000
-pression_brute_LDE7_2=pression_brute_LDE7_2/6000
-
-# Diff Pressure LDE 8
-pression_brute_LDE8_1=extract_uint64_reverse(470, 471)
-pression_brute_LDE8_2=extract_uint64_reverse(472, 473)
-pression_brute_LDE8_1=pression_brute_LDE8_1/6000
-pression_brute_LDE8_2=pression_brute_LDE8_2/6000
-
-# Diff Pressure LDE 9
-pression_brute_LDE9_1=extract_uint64_reverse(475, 476)
-pression_brute_LDE9_2=extract_uint64_reverse(477, 478)
-pression_brute_LDE9_1=pression_brute_LDE9_1/6000
-pression_brute_LDE9_2=pression_brute_LDE9_2/6000
-
-# Diff Pressure LDE 10
-pression_brute_LDE10_1=extract_uint64_reverse(480, 481)
-pression_brute_LDE10_2=extract_uint64_reverse(482, 483)
-pression_brute_LDE10_1=pression_brute_LDE10_1/6000
-pression_brute_LDE10_2=pression_brute_LDE10_2/6000
+Pressures_tempLDE1=Pressures_tempLDE1.T
+Pressures_tempLDE2=Pressures_tempLDE2.T
+Result_tempLDE1=Result_tempLDE1.T
+Result_tempLDE2=Result_tempLDE2.T
 
 # SHT 85 
 SHT1_temp=extract_uint64_reverse(258, 259)
@@ -396,117 +351,81 @@ TH[:,8]=H2_SHT
 
 # PT100
 # Convertir les deux colonnes en binaire et traiter bit par bit
-col_h = matrix[:, 268].astype(np.uint8)
-col_l = matrix[:, 269].astype(np.uint8)
-a = np.array([format(x, '08b') for x in col_h])  # 8 bits pour col 268
-b = np.array([format(x, '08b') for x in col_l])  # 8 bits pour col 269
-a2_str = np.array([a[i] + b[i] for i in range(len(a))])  # Concatener les deux: a2 = "aaaaaaaa" + "bbbbbbbb"
-a2 = np.array([[int(c) for c in s] for s in a2_str])  # Convertir les chaînes binaires en arrays numériques
-a3 = np.sum(a2[:, 1:9] * (2 ** np.arange(7, -1, -1)), axis=1)  # a3 = sum(a2(:,2:9).*2.^(7:-1:0)) -> colonnes 2-9 en MATLAB = indices 1-8 en Python
-a4 = np.concatenate([np.zeros((a2.shape[0], 1)), a2[:, 9:]], axis=1)  # a4 = [zeros(...) a2(:,10:end)] -> colonnes 10-end en MATLAB = indices 9-end en Python
-b3 = np.sum(a4 * (2 ** np.arange(7, -1, -1)), axis=1)  # b3 = sum(a4.*2.^(7:-1:0))
-T2_raw = a3 * 128 + b3  # digi1 = a3*128 + b3
-T2_temp = T2_raw / 32.0 - 256.0  # Conversion en température
-T2[:, 1] = T2_raw  # Remplir le tableau T2
-T2[:, 2] = T2_temp
+col_h=matrix[:, 268].astype(np.uint8)
+col_l=matrix[:, 269].astype(np.uint8)
+a=np.array([format(x,'08b') for x in col_h])  # 8 bits pour col 268
+b=np.array([format(x,'08b') for x in col_l])  # 8 bits pour col 269
+a2_str=np.array([a[i]+b[i] for i in range(len(a))])  # Concatener les deux: a2 = "aaaaaaaa" + "bbbbbbbb"
+a2=np.array([[int(c) for c in s] for s in a2_str])  # Convertir les chaînes binaires en arrays numériques
+a3=np.sum(a2[:, 1:9]*(2**np.arange(7,-1,-1)), axis=1)  # a3 = sum(a2(:,2:9).*2.^(7:-1:0)) -> colonnes 2-9 en MATLAB = indices 1-8 en Python
+a4=np.concatenate([np.zeros((a2.shape[0], 1)), a2[:, 9:]], axis=1)  # a4 = [zeros(...) a2(:,10:end)] -> colonnes 10-end en MATLAB = indices 9-end en Python
+b3=np.sum(a4*(2**np.arange(7,-1,-1)), axis=1)  # b3 = sum(a4.*2.^(7:-1:0))
+T2_raw=a3*128+b3  # digi1 = a3*128 + b3
+T2_temp=T2_raw/32.0-256.0  # Conversion en température
+T2[:, 1]=T2_raw  # Remplir le tableau T2
+T2[:, 2]=T2_temp
 
-# Pression statique 2
-pression_statique_brute2_0=extract_uint64_reverse(273, 274)  
-pression_statique_brute2_1=extract_uint64_reverse(275, 276)  
-val3=(24575-2730)/(1100-600)
-result_pression_statique2_0=(pression_statique_brute2_0-2730)/val3+600
-result_pression_statique2_1=(pression_statique_brute2_1-2730)/val3+600
-# HCEM 2
-pression_HCEM2_brute2=extract_uint64_reverse(277, 278)  
-pression_HCEM2_brute3=extract_uint64_reverse(279, 280)
-pression_HCEM2_brute4=extract_uint64_reverse(281, 282)  
-pression_HCEM2_brute5=extract_uint64_reverse(283, 284)
-val4=(24575-2730)/50
-result_pression_HCEM2_2=(pression_HCEM2_brute2-2730)/val4
-result_pression_HCEM2_3=(pression_HCEM2_brute3-2730)/val4
-result_pression_HCEM2_4=(pression_HCEM2_brute4-2730)/val4
-result_pression_HCEM2_5=(pression_HCEM2_brute5-2730)/val4
+def processpressure(start: int, n: int) -> None:
+    """
+    Process pressure data starting from a given index, including static pressure, HCEM and HCE10
+    Args:
+        start (int): Index of the column we start from for pressure data processing.
+        n (int): The number corresponding to the group of pression trio (1-10)
+    Returns:
+        None but will fill up the temporary variables
+    """
+    val0=(24575-2730)/(1100-600)
+    val1=(24575-2730)/50
+    val2=(24575-2730)/20
+    for i in range(10):
+        var_name=f'Pressures{i}_temp'
+        res_name=f'Result{i}_temp'
+        if i < 2 :
+            globals()[var_name][:, n-1]=extract_uint64_reverse(start+i*2, start+i*2+1)
+            globals()[res_name][:, n-1]=(globals()[var_name][:, n-1]-2730)/val0+600
+        elif i < 6 :
+            globals()[var_name][:, n-1]=extract_uint64_reverse(start+i*2, start+i*2+1)
+            globals()[res_name][:, n-1]=(globals()[var_name][:, n-1]-2730)/val1
+        else :
+            globals()[var_name][:, n-1]=extract_uint64_reverse(start+i*2, start+i*2+1)
+            globals()[res_name][:, n-1]=(globals()[var_name][:, n-1]-2730)/val2-10
+    return
 
-# Diff Pressure HCE10 2
-pression_HCE102_brute6=extract_uint64_reverse(285, 286)  
-pression_HCE102_brute7=extract_uint64_reverse(287, 288)
-pression_HCE102_brute8=extract_uint64_reverse(289, 290)
-pression_HCE102_brute9=extract_uint64_reverse(291, 292)
-val5=(24575-2730)/20
-result_pression_HCE102_6=(pression_HCE102_brute6-2730)/val5-10
-result_pression_HCE102_7=(pression_HCE102_brute7-2730)/val5-10
-result_pression_HCE102_8=(pression_HCE102_brute8-2730)/val5-10
-result_pression_HCE102_9=(pression_HCE102_brute9-2730)/val5-10
+processpressure(236, 1)
+processpressure(273, 2)
+processpressure(295, 3)
+processpressure(317, 4)
+processpressure(339, 5)
+processpressure(362, 6)
+processpressure(383, 7)
+processpressure(405, 8)
+processpressure(427, 9)
+processpressure(449, 10)
 
-# pression statique 3
-pression_statique_brute3_0=extract_uint64_reverse(295, 296)  
-pression_statique_brute3_1=extract_uint64_reverse(297, 298) 
-val6=(24575-2730)/(1100-600)
-result_pression_statique3_0=(pression_statique_brute3_0-2730)/val6+600
-result_pression_statique3_1=(pression_statique_brute3_1-2730)/val6+600
-# HCEM 3
-pression_HCEM3_brute2=extract_uint64_reverse(299, 300)  
-pression_HCEM3_brute3=extract_uint64_reverse(301, 302)
-pression_HCEM3_brute4=extract_uint64_reverse(303, 304)  
-pression_HCEM3_brute5=extract_uint64_reverse(305, 306)
-val7=(24575-2730)/50
-result_pression_HCEM3_2=(pression_HCEM3_brute2-2730)/val7
-result_pression_HCEM3_3=(pression_HCEM3_brute3-2730)/val7
-result_pression_HCEM3_4=(pression_HCEM3_brute4-2730)/val7
-result_pression_HCEM3_5=(pression_HCEM3_brute5-2730)/val7
+for i in range(10):
+    n1=f'Pressures{i}_temp'
+    n2=f'Result{i}_temp'
+    globals()[n1]=globals()[n1].T
+    globals()[n2]=globals()[n2].T
 
-# Diff Pressure HCE10 3
-pression_HCE103_6=extract_uint64_reverse(307, 308)
-pression_HCE103_7=extract_uint64_reverse(309, 310)
-pression_HCE103_8=extract_uint64_reverse(311, 312)
-pression_HCE103_9=extract_uint64_reverse(313, 314)
-val8=(24575-2730)/20
-result_pression_HCE103_6=(pression_HCE103_6-2730)/val8-10
-result_pression_HCE103_7=(pression_HCE103_7-2730)/val8-10
-result_pression_HCE103_8=(pression_HCE103_8-2730)/val8-10
-result_pression_HCE103_9=(pression_HCE103_9-2730)/val8-10
+for i in range(10):
+    n1=f'Pressures{i}_temp'
+    n2=f'Result{i}_temp'
+    Pressures[:,i+1]=globals()[n1].flatten()
+    Pressures[:,i+11]=globals()[n2].flatten()
 
-# Pression statique 4
-pression_statique_brute4_0=extract_uint64_reverse(317, 318)
-pression_statique_brute4_1=extract_uint64_reverse(319, 320)
-val9=(24575-2730)/(1100-600)
-result_pression_statique4_0=(pression_statique_brute4_0-2730)/val9+600
-result_pression_statique4_1=(pression_statique_brute4_1-2730)/val9+600
-# HCEM 4
-pression_HCEM4_brute2=extract_uint64_reverse(321, 322)
-pression_HCEM4_brute3=extract_uint64_reverse(323, 324)
-pression_HCEM4_brute4=extract_uint64_reverse(325, 326)
-pression_HCEM4_brute5=extract_uint64_reverse(327, 328)
-val10=(24575-2730)/50
-result_pression_HCEM4_2=(pression_HCEM4_brute2-2730)/val10
-result_pression_HCEM4_3=(pression_HCEM4_brute3-2730)/val10
-result_pression_HCEM4_4=(pression_HCEM4_brute4-2730)/val10
-result_pression_HCEM4_5=(pression_HCEM4_brute5-2730)/val10
 
-# Diff Pressure HCE10 4
-pression_HCE104_6=extract_uint64_reverse(329, 330)
-pression_HCE104_7=extract_uint64_reverse(331, 332)
-pression_HCE104_8=extract_uint64_reverse(333, 334)
-pression_HCE104_9=extract_uint64_reverse(335, 336)
-val11=(24575-2730)/20
-result_pression_HCE104_6=(pression_HCE104_6-2730)/val11-10
-result_pression_HCE104_7=(pression_HCE104_7-2730)/val11-10
-result_pression_HCE104_8=(pression_HCE104_8-2730)/val11-10
-result_pression_HCE104_9=(pression_HCE104_9-2730)/val11-10
-
-"""
-JEN ETAIS LA, FAUT FAIRE LA PRESSION STATIQUE 5 COMME LES 4 PRECEDENTES
-"""
 
 
 
 Result_adnav=(np.tile((AD_NAVIGATION[:,3]*1e6)+ AD_NAVIGATION[:,4]/1e3,(10,1)).T+np.tile(np.arange(0,10),(line_count,1))).T
 
 
-
+"""
 print(AD_NAVIGATION[-1:]) # Affichage des 5 dernières lignes de la table AD_NAVIGATION
 print(IMU[-1:]) # Affichage des 5 dernières lignes de la table IMU
 print(PaquetAirData[-1:]) # Affichage des 5 dernières lignes de la table PaquetAirData
+"""
 
 # Créer le dossier s'il n'existe pas
 os.makedirs('resultats_test', exist_ok=True)
@@ -515,9 +434,13 @@ pd.DataFrame(AD_NAVIGATION[-100:], columns=AD_NAVIGATION_LABEL).to_csv('resultat
 pd.DataFrame(IMU[-100:], columns=IMU_label).to_csv('resultats_test/IMU.csv', index=False)
 pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('resultats_test/PaquetAirData.csv', index=False)
 pd.DataFrame(T2[-100:], columns=T2_label).to_csv('resultats_test/T2.csv', index=False)
+pd.DataFrame(TH[-100:], columns=TH_label).to_csv('resultats_test/TH.csv', index=False)
+pd.DataFrame(Pressures, columns=Pressures_label).to_csv('resultats_test/Pressures.csv', index=False)
+
+print(len(Pressures))
 
 
-
+# A FIX, LE PRESSURES QUI EST EN DESORDRE, LES LDE QUI SONT PQS IMPLEMENTES DANS LE PRESSURES
 
 
 
