@@ -122,17 +122,7 @@ for row in matrix:
         row[0:511] = row[512:1023]
         row[512:1023] = temp
 
-
-
-# Traitement donnees IMU Spatial
-"""
-AD_NAVIGATION[:,1] = matrix[:,1].astype(np.uint16)*(2**8)+matrix[:,0].astype(np.uint16) # Sys Status
-AD_NAVIGATION[:,2] = matrix[:,3].astype(np.uint16)*(2**8)+matrix[:,2].astype(np.uint16) # Filter Status
-AD_NAVIGATION[:,3] = matrix[:,7].astype(np.uint32)*(2**24)+matrix[:,6].astype(np.uint32)*(2**16)+matrix[:,5].astype(np.uint32)*(2**8)+matrix[:,4].astype(np.uint32) # Unix Time
-AD_NAVIGATION[:,4] = matrix[:,11].astype(np.uint32)*(2**24)+matrix[:,10].astype(np.uint32)*(2**16)+matrix[:,9].astype(np.uint32)*(2**8)+matrix[:,8].astype(np.uint32) # Micro Secondes
-AD_NAVIGATION[:,5] = matrix[:,19].astype(np.uint64)*(2**56)+matrix[:,18].astype(np.uint64)*(2**48)+matrix[:,17].astype(np.uint64)*(2**40)+matrix[:,16].astype(np.uint64)*(2**32)+matrix[:,15].astype(np.uint32)*(2**24)+matrix[:,14].astype(np.uint32)*(2**16)+matrix[:,13].astype(np.uint32)*(2**8)+matrix[:,12].astype(np.uint32) # Latitude (Rad)
-"""
-
+# Fonctions Generales
 def extract_uint64_forward(*cols):
     result = np.zeros(matrix.shape[0])
     sorted_cols = sorted(cols)
@@ -179,6 +169,7 @@ def dec2single(*cols):
         byte_array[:, i] = matrix[:, col]
     return np.array([struct.unpack('<f', byte_array[i].tobytes())[0] for i in range(byte_array.shape[0])])
 
+# Compteurs
 compteur1s = extract_uint64_forward(495, 496)  # Compteur 1s
 compteur1sv2 = compteur1s.repeat(10).T  # version 10 Hz
 compteurSD = extract_uint64_reverse(499, 500, 501, 502)  # compteur SD
@@ -186,6 +177,8 @@ compteurSDv2 = compteurSD.repeat(10).T  # version 10 Hz
 compteur100Hz = extract_uint64_reverse(505, 506, 507, 508)  # Compteur 100Hz
 compteur100Hzv2 = compteur100Hz.repeat(10).T  # version 10 Hz
 
+# Traitement donnees IMU Spatial
+# AD_NAVIGATION
 AD_NAVIGATION[:,0] = compteurSD
 AD_NAVIGATION[:,1] = extract_uint64_forward(0, 1)  # Sys Status
 AD_NAVIGATION[:,2] = extract_uint64_forward(2, 3)  # Filter Status
@@ -211,11 +204,13 @@ AD_NAVIGATION[:,21] = dec2single(88, 89, 90, 91)  # Latitude Standard Deviation
 AD_NAVIGATION[:,22] = dec2single(92, 93, 94, 95)  # Longitude Standard Deviation
 AD_NAVIGATION[:,23] = dec2single(96, 97, 98, 99)  # Height Standard Deviation
 AD_NAVIGATION[:,24] = compteur1s  # Secondes
-AD_NAVIGATION[:,25] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmili
+AD_NAVIGATION[:,25] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmilli
 AD_NAVIGATION[:,26] = compteur100Hz  # Compteur 100hz
-
-Result_adnav = ((AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3).repeat(10).T
 # 
+TsmilliV2 = ((AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3).repeat(10).T
+Tsmilli = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3
+
+# IMU
 IMU[:,0] = compteurSD
 IMU[:,1] = dec2single(100, 101, 102, 103)  # Xaccl
 IMU[:,2] = dec2single(104, 105, 106, 107)  # Yaccl
@@ -230,9 +225,10 @@ IMU[:,10] = dec2single(136, 137, 138, 139) # Temperature IMU
 IMU[:,11] = dec2single(140, 141, 142, 143) # Barometer
 IMU[:,12] = dec2single(144, 145, 146, 147) # Temperature Pressure
 IMU[:,13] = compteur1s  # Compteur 1s
-IMU[:,14] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3
+IMU[:,14] = Tsmilli
 IMU[:,15] = compteur100Hz
-#
+
+# Paquet Air Data
 PaquetAirData[:,0] = compteurSD 
 PaquetAirData[:,1] = dec2single(148, 149, 150, 151)  # Barometric Altitude delay (s)
 PaquetAirData[:,2] = dec2single(152, 153, 154, 155)  # Air Speed delay (s)
@@ -242,46 +238,59 @@ PaquetAirData[:,5] = dec2single(164, 165, 166, 167)  # Barometric  Standard Devi
 PaquetAirData[:,6] = dec2single(168, 169, 170, 171)  # Air Speed Standard Deviation
 PaquetAirData[:,7] = matrix[:,172] # Status
 PaquetAirData[:,8] = compteur1s
-PaquetAirData[:,9] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmili
+PaquetAirData[:,-2] = Tsmilli  # TSmilli
 PaquetAirData[:,-1] = compteur100Hz  # Compteur 100hz
 
-
+# MOTUS RAW
 MOTUSRAW[:,0]=compteurSDv2
 MOTUSRAW[:,13]=compteur1sv2
+MOTUSRAW[:,-3]=TsmilliV2
 MOTUSRAW[:,-1]=compteur100Hzv2
 
+# MOTUS ORI
 MOTUSORI[:,0]=compteurSD
 MOTUSORI[:,4]=compteur1s
+MOTUSORI[:,-2]=Tsmilli
 MOTUSORI[:,-1]=compteur100Hz
 
+# TH
 TH[:,0]=compteurSD
 TH[:,9]=compteur1s
+TH[:,-2]=Tsmilli
 TH[:,-1]=compteur100Hz
 
+# T2
 T2[:,0]=compteurSD
 T2[:,3]=compteur1s
+T2[:,-2]=Tsmilli
 T2[:,-1]=compteur100Hz
 
+# Air Data Sensors
 AirDataSensors[:,0]=compteurSD
 AirDataSensors[:,1]=dec2single(185, 186, 187, 188) # Absolute Pressure (Pa)
 AirDataSensors[:,2]=dec2single(189, 190, 191, 192) # Differential Pressure (Pa)
 AirDataSensors[:,3]=matrix[:,193] # Status
 AirDataSensors[:,4]=dec2single(194, 195, 196, 197) # Temperature (°C)
 AirDataSensors[:,5]=compteur1s
+AirDataSensors[:,-2]=Tsmilli
 AirDataSensors[:,-1]=compteur100Hz
 
+# Pressures
 Pressures[:,0]=compteurSDv2
 Pressures[:,25]=compteur1sv2
-Pressures[:,26]=Result_adnav
+Pressures[:,-2]=TsmilliV2
 Pressures[:,-1]=compteur100Hzv2
 
+# Paquet Wind
 PaquetWind[:,0]=compteurSD
 PaquetWind[:,1]=dec2single(173, 174, 175, 176) # Wind Velocity North (m/s)
 PaquetWind[:,2]=dec2single(177, 178, 179, 180) # Wind Velocity East (m/s)
 PaquetWind[:,3]=dec2single(181, 182, 183, 184) # Wind Velocity Standard Deviation (m/s)
 PaquetWind[:,4]=compteur1s
+PaquetWind[:,-2]=Tsmilli
 PaquetWind[:,-1]=compteur100Hz
 
+# Pattern
 Pattern[:,1]=matrix[:,234] # AA
 Pattern[:,2]=matrix[:,235] # BB
 Pattern[:,3]=matrix[:,256] # CC
@@ -312,6 +321,28 @@ Pattern[:,27]=matrix[:,497] # C5
 Pattern[:,28]=matrix[:,498] # 12
 Pattern[:,29]=matrix[:,503] # C1
 Pattern[:,30]=matrix[:,504] # 00
+Pattern[:,31]=matrix[:,510] # BB
+Pattern[:,32]=matrix[:,511] # BB
+Pattern[:,33]=matrix[:,560] # AC
+Pattern[:,34]=matrix[:,561] # C2
+Pattern[:,35]=matrix[:,610] # AC
+Pattern[:,36]=matrix[:,611] # C3
+Pattern[:,37]=matrix[:,660] # AC
+Pattern[:,38]=matrix[:,661] # C4
+Pattern[:,39]=matrix[:,710] # AC
+Pattern[:,40]=matrix[:,711] # C5
+Pattern[:,41]=matrix[:,760] # AC
+Pattern[:,42]=matrix[:,761] # C6
+Pattern[:,43]=matrix[:,810] # AC
+Pattern[:,44]=matrix[:,811] # C7
+Pattern[:,45]=matrix[:,860] # AC
+Pattern[:,46]=matrix[:,861] # C8
+Pattern[:,47]=matrix[:,910] # AC
+Pattern[:,48]=matrix[:,911] # C9
+Pattern[:,49]=matrix[:,960] # AC
+Pattern[:,50]=matrix[:,961] # CA
+Pattern[:,51]=matrix[:,1010] # AB
+Pattern[:,52]=matrix[:,1011] # CD
 
 def processpressureLDE (start: int, n: int) -> None:
     """
@@ -338,12 +369,6 @@ processpressureLDE(229,7)
 processpressureLDE(470,8)
 processpressureLDE(475,9)
 processpressureLDE(480,10)
-"""
-Pressures_tempLDE1=Pressures_tempLDE1.T
-Pressures_tempLDE2=Pressures_tempLDE2.T
-Result_tempLDE1=Result_tempLDE1.T
-Result_tempLDE2=Result_tempLDE2.T
-"""
 
 # Remplir Pressures avec les données LDE
 Pressures[:,21]=Pressures_tempLDE1.flatten()
@@ -354,14 +379,18 @@ Pressures[:,24]=Result_tempLDE2.flatten()
 # SHT 85 
 SHT1_temp=extract_uint64_reverse(258, 259)
 SHT1_hum=extract_uint64_reverse(260, 261)
-T1_SHT=-45+165*SHT1_temp/(2**16-1)
+TH[:,1]=SHT1_temp
+TH[:,2]=SHT1_hum
+T1_SHT=-45+175*SHT1_temp/(2**16-1)
 H1_SHT=100*SHT1_hum/(2**16-1)
 TH[:,5]=T1_SHT
 TH[:,6]=H1_SHT
 
 SHT2_temp=extract_uint64_reverse(262, 263)
 SHT2_hum=extract_uint64_reverse(264, 265)
-T2_SHT=-45+165*SHT2_temp/(2**16-1)  # Renamed to avoid overwriting T2 array
+TH[:,3]=SHT2_temp
+TH[:,4]=SHT2_hum
+T2_SHT=-45+175*SHT2_temp/(2**16-1) 
 H2_SHT=100*SHT2_hum/(2**16-1)
 TH[:,7]=T2_SHT
 TH[:,8]=H2_SHT
@@ -419,7 +448,7 @@ processpressure(405, 8)
 processpressure(427, 9)
 processpressure(449, 10)
 
-
+# Remplir Pressures avec les données de pression Statique, HCEM et HCE10
 for i in range(10):
     n1=f'Pressures{i}_temp'
     n2=f'Result{i}_temp'
@@ -427,6 +456,47 @@ for i in range(10):
     Pressures[:,i+11]=globals()[n2].flatten()
 
 
+# MOTUS DATA
+def processMOTUSRAW(start: int, n: int) -> None:
+    """
+    Process MOTUS RAW data starting from a given index
+    Args:
+        start (int): Index of the column we start from for MOTUS RAW data processing.
+        n (int): The number corresponding to the group of MOTUS RAW (1-12)
+    Returns:
+        None but will fill up the temporary variables
+    """
+    for i in range(12):
+        var_name=f'RAW{i}_temp'
+        globals()[var_name][:, n-1]=dec2single(start+i*4, start+i*4+1, start+i*4+2, start+i*4+3)
+    return
+
+processMOTUSRAW(512,1)
+processMOTUSRAW(562,2)
+processMOTUSRAW(612,3)
+processMOTUSRAW(662,4) 
+processMOTUSRAW(712,5)
+processMOTUSRAW(762,6)
+processMOTUSRAW(812,7)
+processMOTUSRAW(862,8)
+processMOTUSRAW(912,9)
+processMOTUSRAW(962,10)
+
+for i in range(12):
+    n=f'RAW{i}_temp'
+    MOTUSRAW[:,i+1]=globals()[n].flatten()
+
+# Replace NaN and Inf values with 0 before calculating QuadSum
+MOTUSRAW[:, 1] = np.where(np.isfinite(MOTUSRAW[:, 1]), MOTUSRAW[:, 1], 0)
+MOTUSRAW[:, 2] = np.where(np.isfinite(MOTUSRAW[:, 2]), MOTUSRAW[:, 2], 0)
+MOTUSRAW[:, 3] = np.where(np.isfinite(MOTUSRAW[:, 3]), MOTUSRAW[:, 3], 0)
+
+MOTUSRAW[:,-2]=np.sqrt(MOTUSRAW[:,1]**2+MOTUSRAW[:,2]**2+MOTUSRAW[:,3]**2)
+
+# MOTUS ORI
+MOTUSORI[:,1]=dec2single(1012, 1013, 1014, 1015)*180/np.pi  # Roll
+MOTUSORI[:,2]=dec2single(1016, 1017, 1018, 1019)*180/np.pi  # Pitch
+MOTUSORI[:,3]=dec2single(1020, 1021, 1022, 1023)*180/np.pi  # Heading
 
 # Créer le dossier s'il n'existe pas
 os.makedirs('resultats_test', exist_ok=True)
@@ -437,8 +507,12 @@ pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('resultat
 pd.DataFrame(T2[-100:], columns=T2_label).to_csv('resultats_test/T2.csv', index=False)
 pd.DataFrame(TH[-100:], columns=TH_label).to_csv('resultats_test/TH.csv', index=False)
 pd.DataFrame(Pressures[-100:], columns=Pressures_label).to_csv('resultats_test/Pressures.csv', index=False)
+pd.DataFrame(MOTUSRAW[-100:], columns=MOTUSRAW_label).to_csv('resultats_test/MOTUSRAW.csv', index=False)
+pd.DataFrame(MOTUSORI[-100:], columns=MOTUSORI_label).to_csv('resultats_test/MOTUSORI.csv', index=False)
+pd.DataFrame(PaquetWind[-100:], columns=PaquetWind_label).to_csv('resultats_test/PaquetWind.csv', index=False)
+pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('resultats_test/PaquetAirData.csv', index=False)
+pd.DataFrame(AirDataSensors[-100:], columns=AirDataSensors_label).to_csv('resultats_test/AirDataSensors.csv', index=False)
 
-print(len(Pressures))
 
 
 
