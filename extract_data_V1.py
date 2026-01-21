@@ -6,27 +6,9 @@ import h5py
 import pandas as pd
 import os
 import time
-import warnings
 
-# Suppress warnings about invalid values in casting/arithmetic operations
-# These occur naturally when byte patterns don't represent valid floats, but the script handles it
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*invalid value.*')
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*overflow.*')
-
-# Start timer and timing checkpoint dict
+# Start timer
 start_time = time.time()
-checkpoints = {}
-
-def checkpoint(name):
-    """Record a timing checkpoint"""
-    current_time = time.time()
-    if name in checkpoints:
-        elapsed = current_time - checkpoints[name]
-        print(f"  [OK] {name}: {elapsed:.2f}s")
-    else:
-        checkpoints[name] = current_time
-        print(f"  [*] {name}...")
-    return current_time
 
 # fonction permettant d'ouvrir un fichier binaire écrit en hexadécimal, de l'enregistrer dans un tableau 2d et d'afficher le contenu d'une ligne ou d'une colonne en sachant qu'une ligne fait 1024 octets
 def extract_data(file_path, offset1, offset2):
@@ -43,9 +25,6 @@ def extract_data(file_path, offset1, offset2):
 
 extract_data("C:\\Users\\Antonin\\Desktop\\Antonin\\folder bin\\MomentaVol5_clean.bin", 1, 0)
 # extract_data("C:\\Users\\Antonin\\Desktop\\Anto Projet\\MomentaVol5_small.bin", 1, 0)
-
-print("\n[1/6] Loading binary file...")
-checkpoint("Binary load")
 
 # creation des tables et de celles de 'label'
 AD_NAVIGATION_LABEL = ['Time','SystStatus','FilterStatus','Unixtime','MicroSecondes','Latitude(Rad)',
@@ -147,8 +126,7 @@ for row in matrix:
         row[0:511] = row[512:1023]
         row[512:1023] = temp
 
-print("[2/6] Processing AD_NAVIGATION, IMU, and counters...")
-checkpoint_start = time.time()
+# Fonctions Generales
 def extract_uint64_forward(*cols):
     result = np.zeros(matrix.shape[0])
     sorted_cols = sorted(cols)
@@ -176,23 +154,24 @@ def uin82int16(a, b):
     return signed
 
 def dec2double(*cols):
-    """Vectorized conversion from 8 uint8 to float64 - OPTIMIZED with numpy view"""
+    """look for the specified argument in the matrix and return it to double (float64)"""
     if len(cols) != 8:
         raise ValueError("Exactly 8 columns are required to form a double")
     sorted_cols = sorted(cols)
-    byte_array = np.column_stack([matrix[:, col] for col in sorted_cols]).astype(np.uint8)
-    return np.frombuffer(byte_array.tobytes(), dtype=np.float64)
+    byte_array = np.zeros((matrix.shape[0], 8), dtype=np.uint8)
+    for i, col in enumerate(sorted_cols):
+        byte_array[:, i] = matrix[:, col]
+    return np.array([struct.unpack('<d', byte_array[i].tobytes())[0] for i in range(byte_array.shape[0])])
 
 def dec2single(*cols):
-    """Vectorized conversion from 4 uint8 to float32 - ULTRA-OPTIMIZED with direct indexing"""
+    """look for the specified argument in the matrix and return it to single (float32)"""
     if len(cols) != 4:
         raise ValueError("Exactly 4 columns are required to form a single")
     sorted_cols = sorted(cols)
-    n_rows = matrix.shape[0]
-    byte_array = np.empty((n_rows, 4), dtype=np.uint8)
+    byte_array = np.zeros((matrix.shape[0], 4), dtype=np.uint8)
     for i, col in enumerate(sorted_cols):
         byte_array[:, i] = matrix[:, col]
-    return np.frombuffer(byte_array.tobytes(), dtype=np.float32)
+    return np.array([struct.unpack('<f', byte_array[i].tobytes())[0] for i in range(byte_array.shape[0])])
 
 # Compteurs
 compteur1s = extract_uint64_forward(495, 496)  # Compteur 1s
@@ -231,15 +210,11 @@ AD_NAVIGATION[:,23] = dec2single(96, 97, 98, 99)  # Height Standard Deviation
 AD_NAVIGATION[:,24] = compteur1s  # Secondes
 AD_NAVIGATION[:,25] = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3  # TSmilli
 AD_NAVIGATION[:,26] = compteur100Hz  # Compteur 100hz
-
-print(f"  [OK] AD_NAVIGATION, IMU, counters: {time.time() - checkpoint_start:.2f}s")
-
-print("[3/6] Processing Air Data, Wind, and Pressures...")
-checkpoint_start = time.time()
+# 
+TsmilliV2 = ((AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3).repeat(10).T
 Tsmilli = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3
 
-# Calculate once, reuse everywhere - keep as 1D for IMU, create V2 for 10Hz data
-TsmilliV2 = np.repeat(Tsmilli, 10)
+# IMU
 IMU[:,0] = compteurSD
 IMU[:,1] = dec2single(100, 101, 102, 103)  # Xaccl
 IMU[:,2] = dec2single(104, 105, 106, 107)  # Yaccl
@@ -319,10 +294,7 @@ PaquetWind[:,4]=compteur1s
 PaquetWind[:,-2]=Tsmilli
 PaquetWind[:,-1]=compteur100Hz
 
-print(f"  [OK] Air Data, Wind, Pressures: {time.time() - checkpoint_start:.2f}s")
-
-print("[4/6] Processing Pattern and Temperature/Humidity...")
-checkpoint_start = time.time()
+# Pattern
 Pattern[:,1]=matrix[:,234] # AA
 Pattern[:,2]=matrix[:,235] # BB
 Pattern[:,3]=matrix[:,256] # CC
@@ -427,27 +399,21 @@ H2_SHT=100*SHT2_hum/(2**16-1)
 TH[:,7]=T2_SHT
 TH[:,8]=H2_SHT
 
-# PT100 
-col_h = matrix[:, 268].astype(np.uint16)
-col_l = matrix[:, 269].astype(np.uint16)
-combined = (col_h << 8) | col_l
-a3 = (combined >> 7) & 0xFF  # Upper 8 bits
-b3 = combined & 0x7F  # Lower 7 bits
-
-T2_raw = a3 * 128 + b3
-T2_temp = T2_raw / 32.0 - 256.0
-T2[:, 1] = T2_raw
-T2[:, 2] = T2_temp
-
-print(f"  [OK] Pattern and SHT/PT100: {time.time() - checkpoint_start:.2f}s")
-
-print("[5/6] Processing MOTUS RAW and ORI...")
-checkpoint_start = time.time()
-
-# Pressure conversion constants
-val0=(24575-2730)/(1100-600)
-val1=(24575-2730)/50
-val2=(24575-2730)/20
+# PT100
+# Convertir les deux colonnes en binaire et traiter bit par bit
+col_h=matrix[:, 268].astype(np.uint8)
+col_l=matrix[:, 269].astype(np.uint8)
+a=np.array([format(x,'08b') for x in col_h])  # 8 bits pour col 268
+b=np.array([format(x,'08b') for x in col_l])  # 8 bits pour col 269
+a2_str=np.array([a[i]+b[i] for i in range(len(a))])  # Concatener les deux: a2 = "aaaaaaaa" + "bbbbbbbb"
+a2=np.array([[int(c) for c in s] for s in a2_str])  # Convertir les chaînes binaires en arrays numériques
+a3=np.sum(a2[:, 1:9]*(2**np.arange(7,-1,-1)), axis=1)  # a3 = sum(a2(:,2:9).*2.^(7:-1:0)) -> colonnes 2-9 en MATLAB = indices 1-8 en Python
+a4=np.concatenate([np.zeros((a2.shape[0], 1)), a2[:, 9:]], axis=1)  # a4 = [zeros(...) a2(:,10:end)] -> colonnes 10-end en MATLAB = indices 9-end en Python
+b3=np.sum(a4*(2**np.arange(7,-1,-1)), axis=1)  # b3 = sum(a4.*2.^(7:-1:0))
+T2_raw=a3*128+b3  # digi1 = a3*128 + b3
+T2_temp=T2_raw/32.0-256.0  # Conversion en température
+T2[:, 1]=T2_raw  # Remplir le tableau T2
+T2[:, 2]=T2_temp
 
 def processpressure(start: int, n: int) -> None:
     """
@@ -458,6 +424,9 @@ def processpressure(start: int, n: int) -> None:
     Returns:
         None but will fill up the temporary variables
     """
+    val0=(24575-2730)/(1100-600)
+    val1=(24575-2730)/50
+    val2=(24575-2730)/20
     for i in range(10):
         var_name=f'Pressures{i}_temp'
         res_name=f'Result{i}_temp'
@@ -533,12 +502,10 @@ MOTUSORI[:,1]=dec2single(1012, 1013, 1014, 1015)*180/np.pi  # Roll
 MOTUSORI[:,2]=dec2single(1016, 1017, 1018, 1019)*180/np.pi  # Pitch
 MOTUSORI[:,3]=dec2single(1020, 1021, 1022, 1023)*180/np.pi  # Heading
 
-print(f"  [OK] MOTUS RAW and ORI: {time.time() - checkpoint_start:.2f}s")
-
-print("[6/6] Saving CSV files...")
-checkpoint_start = time.time()
+# Créer le dossier s'il n'existe pas
 os.makedirs('resultats_test', exist_ok=True)
 
+"""
 pd.DataFrame(AD_NAVIGATION[-100:], columns=AD_NAVIGATION_LABEL).to_csv('resultats_test/AD_NAVIGATION.csv', index=False)
 pd.DataFrame(IMU[-100:], columns=IMU_label).to_csv('resultats_test/IMU.csv', index=False)
 pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('resultats_test/PaquetAirData.csv', index=False)
@@ -550,8 +517,7 @@ pd.DataFrame(MOTUSORI[-100:], columns=MOTUSORI_label).to_csv('resultats_test/MOT
 pd.DataFrame(PaquetWind[-100:], columns=PaquetWind_label).to_csv('resultats_test/PaquetWind.csv', index=False)
 pd.DataFrame(PaquetAirData[-100:], columns=PaquetAirData_label).to_csv('resultats_test/PaquetAirData.csv', index=False)
 pd.DataFrame(AirDataSensors[-100:], columns=AirDataSensors_label).to_csv('resultats_test/AirDataSensors.csv', index=False)
-
-print(f"  [OK] CSV files saved: {time.time() - checkpoint_start:.2f}s")
+"""
 
 # End timer and display execution time
 end_time = time.time()
