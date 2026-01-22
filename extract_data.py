@@ -25,89 +25,6 @@ def checkpoint(name, checkpoints_dict):
         print(f"  [*] {name}...")
     return current_time
 
-
-def clean_data(data, column_names, is_circular=False):
-    """
-    Clean data by detecting and interpolating NaN/inconsistent values.
-    Optimized for speed with vectorized operations and early exits.
-    
-    Args:
-        data (np.ndarray): 2D array of data to clean
-        column_names (list): List of column names to identify angle columns
-        is_circular (bool): If True, use circular interpolation for this column
-    
-    Returns:
-        np.ndarray: Cleaned data with interpolated values
-    """
-    cleaned_data = data.astype(float)  # Convert once
-    n_rows, n_cols = cleaned_data.shape
-    
-    # Define angle columns as sets for O(1) lookup
-    angle_columns_rad = {'Latitude(Rad)', 'Longitude(Rad)'}
-    angle_columns_deg = {'Roll', 'Pitch', 'Heading', 'AngularVelocity_X', 'AngularVelocity_Y', 'AngularVelocity_Z'}
-    
-    # Pre-compute which columns need cleaning
-    cols_to_clean = []
-    for col in range(n_cols):
-        if not np.isfinite(cleaned_data[:, col]).all():
-            cols_to_clean.append(col)
-    
-    # If no columns need cleaning, return early
-    if not cols_to_clean:
-        return cleaned_data
-    
-    for col in cols_to_clean:
-        col_data = cleaned_data[:, col]
-        bad_mask = ~np.isfinite(col_data)
-        good_indices = np.where(~bad_mask)[0]
-        bad_indices = np.where(bad_mask)[0]
-        
-        if len(good_indices) == 0:
-            cleaned_data[:, col] = 0
-            continue
-        
-        col_name = column_names[col] if col < len(column_names) else f"Column_{col}"
-        is_angle = col_name in angle_columns_rad or col_name in angle_columns_deg
-        is_angle_deg = col_name in angle_columns_deg
-        
-        # Use searchsorted for efficient before/after lookup
-        before_positions = np.searchsorted(good_indices, bad_indices, side='right') - 1
-        after_positions = np.searchsorted(good_indices, bad_indices, side='left')
-        
-        for i, bad_idx in enumerate(bad_indices):
-            before_pos = before_positions[i]
-            after_pos = after_positions[i]
-            
-            if before_pos >= 0 and after_pos < len(good_indices):
-                # Both before and after exist - interpolate
-                before_idx = good_indices[before_pos]
-                after_idx = good_indices[after_pos]
-                before_val = col_data[before_idx]
-                after_val = col_data[after_idx]
-                weight = (bad_idx - before_idx) / (after_idx - before_idx)
-                
-                if is_angle:
-                    angle_range = 360 if is_angle_deg else 2 * np.pi
-                    diff = after_val - before_val
-                    if abs(diff) > angle_range / 2:
-                        after_val = after_val - angle_range if diff > 0 else after_val + angle_range
-                    interpolated = before_val + weight * (after_val - before_val)
-                    interpolated = interpolated % angle_range if is_angle_deg else interpolated % (2 * np.pi)
-                else:
-                    interpolated = before_val + weight * (after_val - before_val)
-                
-                cleaned_data[bad_idx, col] = interpolated
-            
-            elif before_pos >= 0:
-                # Only before exists
-                cleaned_data[bad_idx, col] = col_data[good_indices[before_pos]]
-            
-            elif after_pos < len(good_indices):
-                # Only after exists
-                cleaned_data[bad_idx, col] = col_data[good_indices[after_pos]]
-    return cleaned_data
-
-
 def load_binary_data(file_path, offset1, offset2):
     """Load binary file and return matrix and line count"""
     data = np.memmap(file_path, dtype=np.uint8, mode='r')
@@ -145,7 +62,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
     print(f"Processing: {bin_file_path}")
     print(f"{'='*50}\n")
     
-    print("[1/7] Loading binary file...")
+    print("[1/6] Loading binary file...")
     checkpoint_start = checkpoint("Binary load", checkpoints)
     
     matrix, line_count = load_binary_data(bin_file_path, offset1, offset2)
@@ -250,7 +167,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
             row[0:511] = row[512:1023]
             row[512:1023] = temp
 
-    print("[2/7] Processing AD_NAVIGATION, IMU, and counters...")
+    print("[2/6] Processing AD_NAVIGATION, IMU, and counters...")
     checkpoint_start = checkpoint("AD_NAVIGATION, IMU, counters", checkpoints)
     
     def extract_uint64_forward(*cols):
@@ -338,7 +255,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
 
     print(f"  [OK] AD_NAVIGATION, IMU, counters: {time.time() - checkpoint_start:.2f}s")
 
-    print("[3/7] Processing Air Data, Wind, and Pressures...")
+    print("[3/6] Processing Air Data, Wind, and Pressures...")
     checkpoint_start = checkpoint("Air Data, Wind, Pressures", checkpoints)
     Tsmilli = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3
 
@@ -425,7 +342,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
 
     print(f"  [OK] Air Data, Wind, Pressures: {time.time() - checkpoint_start:.2f}s")
 
-    print("[4/7] Processing Pattern and Temperature/Humidity...")
+    print("[4/6] Processing Pattern and Temperature/Humidity...")
     checkpoint_start = checkpoint("Pattern and SHT/PT100", checkpoints)
     Pattern[:,1]=matrix[:,234] # AA
     Pattern[:,2]=matrix[:,235] # BB
@@ -545,7 +462,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
 
     print(f"  [OK] Pattern and SHT/PT100: {time.time() - checkpoint_start:.2f}s")
 
-    print("[5/7] Processing MOTUS RAW and ORI...")
+    print("[5/6] Processing MOTUS RAW and ORI...")
     checkpoint_start = checkpoint("MOTUS RAW and ORI", checkpoints)
 
     # Pressure conversion constants
@@ -682,7 +599,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
     processMOTUSRAW(862,8)
     processMOTUSRAW(912,9)
     processMOTUSRAW(962,10)
-
+    
     for i in range(12):
         MOTUSRAW[:, i+1] = eval(f'RAW{i}_temp').flatten()
 
@@ -699,27 +616,8 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
     MOTUSORI[:,3]=dec2single(1020, 1021, 1022, 1023)*180/np.pi  # Heading
 
     print(f"  [OK] MOTUS RAW and ORI: {time.time() - checkpoint_start:.2f}s")
-
-    """
-    print("[6/7] Cleaning data (interpolating NaN/inconsistent values)...")
-    checkpoint_start = checkpoint("Data cleaning", checkpoints)
     
-    # Clean all datasets
-    AD_NAVIGATION = clean_data(AD_NAVIGATION, AD_NAVIGATION_LABEL)
-    IMU = clean_data(IMU, IMU_label)
-    PaquetAirData = clean_data(PaquetAirData, PaquetAirData_label)
-    T2 = clean_data(T2, T2_label)
-    TH = clean_data(TH, TH_label)
-    Pressures = clean_data(Pressures, Pressures_label)
-    MOTUSRAW = clean_data(MOTUSRAW, MOTUSRAW_label)
-    MOTUSORI = clean_data(MOTUSORI, MOTUSORI_label)
-    PaquetWind = clean_data(PaquetWind, PaquetWind_label)
-    AirDataSensors = clean_data(AirDataSensors, AirDataSensors_label)
-    
-    print(f"  [OK] Data cleaning: {time.time() - checkpoint_start:.2f}s")
-    """
-    
-    print("[7/7] Saving data to HDF5 file...")
+    print("[6/6] Saving data to HDF5 file...")
     checkpoint_start = checkpoint("HDF5 save", checkpoints)
     os.makedirs(output_dir, exist_ok=True)
 

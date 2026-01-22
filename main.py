@@ -15,7 +15,7 @@ if __name__ == '__main__':
         "C:\\Users\\Antonin\\Desktop\\Antonin\\folder bin\\MomentaVol5_clean.bin",
         offset1=7,
         offset2=0,
-        output_dir='resultats_test'
+        output_dir="C:\\Users\\Antonin\\Desktop\\Project Results"
     )
     print(f"Successfully created: {output_file}")
     
@@ -25,7 +25,7 @@ if __name__ == '__main__':
     #     "C:\\Users\\Antonin\\Desktop\\path\\to\\another_flight.bin",
     #     offset1=1,
     #     offset2=0,
-    #     output_dir='resultats_test'
+    #     output_dir="C:\\Users\\Antonin\\Desktop\\Project Results"
     # )
     # print(f"Successfully created: {output_file2}")
     
@@ -37,6 +37,6 @@ if __name__ == '__main__':
     #     "C:\\Users\\Antonin\\Desktop\\Antonin\\folder bin\\MomentaVol3.bin",
     # ]
     # for file_path in files_to_process:
-    #     output_file = extract_flight_data(file_path, offset1=1, offset2=0)
+    #     output_file = extract_flight_data(file_path, offset1=1, offset2=0, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
     #     print(f"Successfully created: {output_file}")
 
