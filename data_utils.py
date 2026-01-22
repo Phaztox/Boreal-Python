@@ -1,8 +1,3 @@
-"""
-Utility functions for loading and saving flight data efficiently using HDF5 format.
-Replaces the old MATLAB .mat file approach with Python HDF5 format.
-"""
-
 import h5py
 import pandas as pd
 import numpy as np
