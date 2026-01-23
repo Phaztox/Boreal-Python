@@ -89,10 +89,12 @@ if h5_files:
             # Create overview dataframe
             overview_data = []
             for name, info in dataset_info.items():
+                # Handle both 1D and 2D datasets
+                num_cols = info['shape'][1] if len(info['shape']) > 1 else 1
                 overview_data.append({
                     'Dataset': name,
                     'Rows': f"{info['shape'][0]:,}",
-                    'Columns': info['shape'][1],
+                    'Columns': num_cols,
                     'Size (MB)': f"{info['size_mb']:.2f}",
                     'Type': str(info['dtype'])
                 })
@@ -118,7 +120,8 @@ if h5_files:
                     info = dataset_info[dataset_name]
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Rows", f"{info['shape'][0]:,}")
-                    col2.metric("Columns", info['shape'][1])
+                    num_cols = info['shape'][1] if len(info['shape']) > 1 else 1
+                    col2.metric("Columns", num_cols)
                     col3.metric("Size", f"{info['size_mb']:.2f} MB")
                     
                     # Get column names

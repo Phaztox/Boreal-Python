@@ -76,7 +76,6 @@ for i=1:length(data5.AD_NAVIGATION(Seuil_bas:Seuil_haut,26))-1
         ADnav_vol5(k,2)=data5_ADnav(i+1,2);
         ADnav_vol5(k,1)=data5_ADnav(i+1,1);
     end
- 
 end
    
 [Resampled_ADnav_25hzto100,time_adnav_tes] =resample(ADnav_vol5,ADnav_vol5(:,26),0.1,1,1);
