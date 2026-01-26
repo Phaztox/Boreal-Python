@@ -11,7 +11,7 @@ import h5py
 from pathlib import Path
 from scipy.interpolate import interp1d
 
-def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, output_dir=None):
+def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, output_dir=None):
     input_filename = Path(input_h5_file).stem  # Gets the filename without extension
     output_filename = f"Resampled_{input_filename}.h5"
     with h5py.File(input_h5_file, 'r') as h5f:
@@ -22,7 +22,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, output_dir=None
         for key in h5f.keys():
             # Get the data
             data = h5f[key][:]
-            datasets[key] = data[offset1:len(data) - offset2]
+            datasets[key] = data[offsetAD1:len(data) - offsetAD2]
             
             # Try to get column names for this specific dataset
             label_key = f'{key}_label' if f'{key}_label' in h5f.attrs else f'{key}_LABEL'
@@ -32,7 +32,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, output_dir=None
                     columns = [col.decode('utf-8') if isinstance(col, bytes) else col for col in columns]
                 labels[key] = columns
         
-        # Resample AD_NAVIGATION 
+        # Interpolate for AD_NAVIGATION 
         ADnav_short = np.zeros((len(datasets['AD_NAVIGATION']),27))
         k=0
         for i in range(len(datasets['AD_NAVIGATION'])-1):
@@ -49,28 +49,20 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, output_dir=None
         time_original = ADnav_short[:, 25]
         
         # Create uniform time grid with same length as original AD_NAVIGATION
-        time_resampled = np.linspace(time_original[0], time_original[-1], len(datasets['AD_NAVIGATION']))
+        adjust=0
+        for i in datasets['AD_NAVIGATION'][-12:, 25]:
+            if i==ADnav_short[-1,25]:
+                adjust+=1
+        time_resampled = np.linspace(time_original[0], time_original[-1], len(datasets['AD_NAVIGATION'])-7)
 
         resampled_ADnav_25to100 = np.zeros((len(time_resampled), ADnav_short.shape[1]))
         for col in range(ADnav_short.shape[1]):
             resampled_ADnav_25to100[:, col] = np.interp(time_resampled, time_original, ADnav_short[:, col])
         time_adnav_tes = time_resampled
 
-        """# Interpolate roll angle using circular interpolation
-        roll_angle = ADnav_short[:, 15]
-        cos_roll = np.cos(np.radians(roll_angle))
-        sin_roll = np.sin(np.radians(roll_angle))
-        x_roll = np.interp(time_resampled, time_original, cos_roll)
-        y_roll = np.interp(time_resampled, time_original, sin_roll)
-        resampled_ADnav_25to100[:, 15] = np.degrees(np.arctan2(y_roll, x_roll))
+        # Interpolate for Pressures
+        
 
-        # Interpolate pitch angle using circular interpolation
-        pitch_angle = ADnav_short[:, 16]
-        cos_pitch = np.cos(np.radians(pitch_angle))
-        sin_pitch = np.sin(np.radians(pitch_angle))
-        x_pitch = np.interp(time_resampled, time_original, cos_pitch)
-        y_pitch = np.interp(time_resampled, time_original, sin_pitch)
-        resampled_ADnav_25to100[:, 16] = np.degrees(np.arctan2(y_pitch, x_pitch))"""
         
         # save it as an h5 file
         output_path = os.path.join(output_dir, output_filename)
@@ -82,9 +74,13 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, output_dir=None
             h5f_out.attrs['Resampled_ADnav_25hzto100_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
             h5f_out.attrs['time_adnav_tes_label'] = np.array(['Time'], dtype='S')
 
+            # also save the ADnav_short for reference
+            h5f_out.create_dataset('ADnav_short', data=ADnav_short, compression="gzip", compression_opts=4)
+            h5f_out.attrs['ADnav_short_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
+
         return 
 
-resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offset1=0, offset2=0, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
+resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offsetAD1=0, offsetAD2=670927, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
 
 
 # Display settings for pandas
