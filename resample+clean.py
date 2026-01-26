@@ -11,7 +11,7 @@ import h5py
 from pathlib import Path
 from scipy.interpolate import interp1d
 
-def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, output_dir=None):
+def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0, offsetP2=0, output_dir=None):
     input_filename = Path(input_h5_file).stem  # Gets the filename without extension
     output_filename = f"Resampled_{input_filename}.h5"
     with h5py.File(input_h5_file, 'r') as h5f:
@@ -22,7 +22,10 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, output_dir=
         for key in h5f.keys():
             # Get the data
             data = h5f[key][:]
-            datasets[key] = data[offsetAD1:len(data) - offsetAD2]
+            if key == 'AD_NAVIGATION':
+                datasets[key] = data[offsetAD1:len(data) - offsetAD2]
+            elif key == 'Pressures':
+                datasets[key] = data[offsetP1:len(data) - offsetP2]
             
             # Try to get column names for this specific dataset
             label_key = f'{key}_label' if f'{key}_label' in h5f.attrs else f'{key}_LABEL'
@@ -61,7 +64,19 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, output_dir=
         time_adnav_tes = time_resampled
 
         # Interpolate for Pressures
+        Pressures_1000hz=datasets['Pressures'][:,11:26]
+        Pressures_100hz=np.zeros((len(Pressures_1000hz)//10,15))
+        for i in range(len(Pressures_1000hz)//10):
+            Pressures_100hz[i,:]=np.mean(Pressures_1000hz[i*10:(i+1)*10,:],axis=0)
+        Pressures_100hz[:,14]=datasets['Pressures'][:-9:10,27]  # time column
         
+        Resampled_Pressures = np.zeros((len(Pressures_100hz), Pressures_100hz.shape[1]))
+        for col in range(Pressures_100hz.shape[1]):
+            Resampled_Pressures[:, col]=np.interp(Pressures_100hz[:,14], Pressures_1000hz[:,14], Pressures_1000hz[:,col])
+        time_p=Pressures_100hz[:,14]
+
+
+
 
         
         # save it as an h5 file
@@ -78,9 +93,18 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, output_dir=
             h5f_out.create_dataset('ADnav_short', data=ADnav_short, compression="gzip", compression_opts=4)
             h5f_out.attrs['ADnav_short_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
 
+            # Save Pressures
+            Resampled_Pressures_label=['Baro1 HCEM STAT','Baro2 HCEM STAT','Pressure1HCE2 Sonde 5T','Pressure2HCE3 Sonde 5T','Pressure3HCE4 Pitot','Pressure4HCE5 Pitot','Pressure5HCE10 HAUT-BAS','Pressure6HCE10 HAUT-BAS','Pressure7HCE10 GAUCHE-DROITE','Pressure8HCE10 GAUCHE-DROITE','LDE1 HAUT-BAS BRUT','LDE2 GAUCHE-DROITE BRUT','LDE1 HAUT-BAS','LDE2 GAUCHE-DROITE','TSmilli']   
+            h5f_out.create_dataset('Resampled_Pressures', data=Resampled_Pressures, compression="gzip", compression_opts=4)
+            h5f_out.create_dataset('time_pressures', data=time_p, compression="gzip", compression_opts=4)
+            h5f_out.attrs['Resampled_Pressures_label'] = np.array(Resampled_Pressures_label, dtype='S')
+            h5f_out.attrs['time_pressures_label'] = np.array(['Time'], dtype='S')
+            h5f_out.create_dataset('Pressures_100hz', data=Pressures_100hz, compression="gzip", compression_opts=4)
+            h5f_out.attrs['Pressures_100hz_label'] = np.array(Resampled_Pressures_label, dtype='S')
+
         return 
 
-resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offsetAD1=0, offsetAD2=670927, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
+resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offsetAD1=0, offsetAD2=670927,offsetP1=93, offsetP2=6709240, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
 
 
 # Display settings for pandas
