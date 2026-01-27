@@ -10,6 +10,8 @@ import numpy as np
 import h5py
 from pathlib import Path
 from scipy.interpolate import interp1d
+from scipy.signal import resample
+import matplotlib.pyplot as plt
 
 def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0, offsetP2=0, output_dir=None):
     input_filename = Path(input_h5_file).stem  # Gets the filename without extension
@@ -64,20 +66,23 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0,
         time_adnav_tes = time_resampled
 
         # Interpolate for Pressures
-        Pressures_1000hz=datasets['Pressures'][:,11:26]
-        Pressures_100hz=np.zeros((len(Pressures_1000hz)//10,15))
+        Pressures_1000hz = datasets['Pressures'][:,11:26]
+        Pressures_100hz = np.zeros((len(Pressures_1000hz)//10, 15))
         for i in range(len(Pressures_1000hz)//10):
-            Pressures_100hz[i,:]=np.mean(Pressures_1000hz[i*10:(i+1)*10,:],axis=0)
-        Pressures_100hz[:,14]=datasets['Pressures'][:-9:10,27]  # time column
+            Pressures_100hz[i,:] = np.mean(Pressures_1000hz[i*10:(i+1)*10,:], axis=0)
+        Pressures_100hz[:,14] = datasets['Pressures'][:-9:10, 26]  # TSmilli column
         
-        Resampled_Pressures = np.zeros((len(Pressures_100hz), Pressures_100hz.shape[1]))
-        for col in range(Pressures_100hz.shape[1]):
-            Resampled_Pressures[:, col]=np.interp(Pressures_100hz[:,14], Pressures_1000hz[:,14], Pressures_1000hz[:,col])
-        time_p=Pressures_100hz[:,14]
-
-
-
-
+        # Use scipy.signal.resample - applies anti-aliasing filter like MATLAB
+        # Resample to uniform grid based on timestamps
+        time_original_p = Pressures_100hz[:, 14]
+        
+        # Calculate target number of samples for uniform 100Hz (10ms intervals)
+        t_start, t_end = time_original_p[0], time_original_p[-1]
+        duration_ms = t_end - t_start
+        num_samples = int(duration_ms / 10)  # 10ms interval = 100Hz
+        
+        # scipy.signal.resample: resamples to num_samples with anti-aliasing filter
+        Resampled_Pressures, time_p = resample(Pressures_100hz, num_samples, t=time_original_p)
         
         # save it as an h5 file
         output_path = os.path.join(output_dir, output_filename)
@@ -102,22 +107,16 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0,
             h5f_out.create_dataset('Pressures_100hz', data=Pressures_100hz, compression="gzip", compression_opts=4)
             h5f_out.attrs['Pressures_100hz_label'] = np.array(Resampled_Pressures_label, dtype='S')
 
-        return 
+        return Pressures_100hz, Resampled_Pressures
 
-resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offsetAD1=0, offsetAD2=670927,offsetP1=93, offsetP2=6709240, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
+a, b = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offsetAD1=0, offsetAD2=670927,offsetP1=90, offsetP2=6709243, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
 
-
-# Display settings for pandas
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', None)
-pd.set_option('display.max_colwidth', None)
-
-"""
-for key in data:
-    print(f"Dataset: {key}")
-    print(f"Shape: {data[key].shape}")
-    print("\nFirst 5 rows:")
-    print(pd.DataFrame(data[key][:5], columns=labels[key]))
-    print("\nLast 5 rows:")
-    print(pd.DataFrame(data[key][-5:], columns=labels[key]))
-    print("\n" + "="*80 + "\n")"""
+# simple plot for Pressure_100hz and Resampled_Pressures on the same plot, using thin lines
+plt.figure(figsize=(12, 6))
+plt.plot(a[:, 3], label='Pressure1 5T - 100hz (original)', linewidth=0.5, color='blue')
+plt.plot(b[:, 3], label='Resampled Pressure1 5T (filtered)', linewidth=0.5, color='orange')
+plt.title('Pressure1 5T - 100hz')
+plt.xlabel("Time")
+plt.ylabel("Pressure")
+plt.legend()
+plt.show()

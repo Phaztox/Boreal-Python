@@ -149,45 +149,51 @@ if h5_files:
             
             st.success(f"Loaded {len(df):,} rows × {len(df.columns)} columns")
             
-            # Controls
-            max_rows_available = min(len(df), 10_000_000)  # Cap at 10M to prevent dashboard slowdown
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                num_rows = st.number_input("Rows to display", min_value=5, max_value=max_rows_available, value=100, step=100)
-            with col2:
-                start_row = st.number_input("Start from row", min_value=0, max_value=len(df)-1, value=0)
-            with col3:
-                search_term = st.text_input("Search columns", placeholder="e.g., Temperature")
-            
-            # Filter columns if search term provided
-            if search_term:
-                filtered_cols = [col for col in df.columns if search_term.lower() in col.lower()]
-                if filtered_cols:
-                    df_display = df[filtered_cols].iloc[start_row:start_row+num_rows]
-                    st.info(f"Found {len(filtered_cols)} columns matching '{search_term}'")
+            # Check if dataset has data
+            if len(df) == 0:
+                st.error("Dataset is empty. No data to display.")
+            else:
+                # Controls
+                max_rows_available = min(len(df), 10_000_000)  # Cap at 10M to prevent dashboard slowdown
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    max_value = max(5, max_rows_available)
+                    num_rows = st.number_input("Rows to display", min_value=5, max_value=max_value, value=min(100, max_value), step=max(1, max_value//100))
+                with col2:
+                    max_start = max(0, len(df) - 1)
+                    start_row = st.number_input("Start from row", min_value=0, max_value=max_start, value=0)
+                with col3:
+                    search_term = st.text_input("Search columns", placeholder="e.g., Temperature")
+                
+                # Filter columns if search term provided
+                if search_term:
+                    filtered_cols = [col for col in df.columns if search_term.lower() in col.lower()]
+                    if filtered_cols:
+                        df_display = df[filtered_cols].iloc[start_row:start_row+num_rows]
+                        st.info(f"Found {len(filtered_cols)} columns matching '{search_term}'")
+                    else:
+                        df_display = df.iloc[start_row:start_row+num_rows]
+                        st.warning(f"No columns found matching '{search_term}'")
                 else:
                     df_display = df.iloc[start_row:start_row+num_rows]
-                    st.warning(f"No columns found matching '{search_term}'")
-            else:
-                df_display = df.iloc[start_row:start_row+num_rows]
-            
-            # Round numeric columns for display (visual only)
-            df_display_rounded = df_display.copy()
-            numeric_cols = df_display_rounded.select_dtypes(include=['float64', 'float32']).columns
-            for col in numeric_cols:
-                df_display_rounded[col] = df_display_rounded[col].round(5)
-            
-            # Display data
-            st.dataframe(df_display_rounded, width='stretch')
-            
-            # Download option
-            csv = df_display.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="Download displayed data as CSV",
-                data=csv,
-                file_name=f"{selected_dataset}_{start_row}_{start_row+num_rows}.csv",
-                mime="text/csv",
-            )
+                
+                # Round numeric columns for display (visual only)
+                df_display_rounded = df_display.copy()
+                numeric_cols = df_display_rounded.select_dtypes(include=['float64', 'float32']).columns
+                for col in numeric_cols:
+                    df_display_rounded[col] = df_display_rounded[col].round(5)
+                
+                # Display data
+                st.dataframe(df_display_rounded, width='content')
+                
+                # Download option
+                csv = df_display.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download displayed data as CSV",
+                    data=csv,
+                    file_name=f"{selected_dataset}_{start_row}_{start_row+num_rows}.csv",
+                    mime="text/csv",
+                )
         
         # ==================== TAB 3: VISUALIZATION ====================
         with tab3:
@@ -200,65 +206,77 @@ if h5_files:
             with st.spinner(f"Loading {viz_dataset}..."):
                 df_viz = get_dataframe(file_path, viz_dataset)
             
-            # Get numeric columns
-            numeric_cols = df_viz.select_dtypes(include=['float64', 'int64']).columns.tolist()
-            
-            if numeric_cols:
-                # Plot type selection
-                plot_type = st.selectbox("Plot type:", ["Line Plot", "Scatter Plot", "Histogram", "Box Plot"], index=1)
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if plot_type in ["Line Plot", "Scatter Plot"]:
-                        x_col = st.selectbox("X-axis:", numeric_cols, index=0)
-                    else:
-                        x_col = st.selectbox("Column:", numeric_cols, index=0)
-                
-                with col2:
-                    if plot_type in ["Line Plot", "Scatter Plot"]:
-                        y_col = st.selectbox("Y-axis:", [col for col in numeric_cols if col != x_col])
-                    else:
-                        y_col = None
-                
-                # Sample data for performance
-                max_sample = min(len(df_viz), 10_000_000)  # Cap at 10M to prevent dashboard slowdown
-                sample_size = st.slider("Sample size (rows):", 100, max_sample, min(10000, max_sample))
-                df_sample = df_viz.sample(n=min(sample_size, len(df_viz)), random_state=42)  # random_state for reproducibility
-                
-                # Create plot
-                try:
-                    if plot_type == "Line Plot":
-                        fig = px.line(df_sample, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
-                    elif plot_type == "Scatter Plot":
-                        fig = px.scatter(df_sample, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
-                    elif plot_type == "Histogram":
-                        fig = px.histogram(df_sample, x=x_col, title=f"Distribution of {x_col}")
-                    elif plot_type == "Box Plot":
-                        fig = px.box(df_sample, y=x_col, title=f"Box Plot of {x_col}")
-                    
-                    fig.update_layout(height=600, width=1200)
-                    st.plotly_chart(fig, width='stretch')
-                    
-                    # Generate filename based on plot type and axes
-                    if plot_type in ["Line Plot", "Scatter Plot"]:
-                        plot_filename = f"{plot_type.lower().replace(' ', '_')}_{x_col}-vs-{y_col}_{sample_size}rows.png"
-                    elif plot_type == "Histogram":
-                        plot_filename = f"histogram_{x_col}_{sample_size}rows.png"
-                    else:  # Box Plot
-                        plot_filename = f"boxplot_{x_col}_{sample_size}rows.png"
-                    
-                    # Download button - use scale=2 for high resolution (2x DPI)
-                    st.download_button(
-                        label="Download plot as PNG",
-                        data=fig.to_image(format="png", width=1200, height=600, scale=2),
-                        file_name=plot_filename,
-                        mime="image/png",
-                    )
-                except Exception as e:
-                    st.error(f"Error creating plot: {str(e)}")
+            # Check if dataset has data
+            if len(df_viz) == 0:
+                st.error("Dataset is empty. Cannot create visualization.")
             else:
-                st.warning("No numeric columns found for visualization")
+                # Get numeric columns
+                numeric_cols = df_viz.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                
+                if numeric_cols:
+                    # Plot type selection
+                    plot_type = st.selectbox("Plot type:", ["Line Plot", "Scatter Plot", "Histogram", "Box Plot"], index=1)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if plot_type in ["Line Plot", "Scatter Plot"]:
+                            x_col = st.selectbox("X-axis:", numeric_cols, index=0)
+                        else:
+                            x_col = st.selectbox("Column:", numeric_cols, index=0)
+                    
+                    with col2:
+                        if plot_type in ["Line Plot", "Scatter Plot"]:
+                            y_col = st.selectbox("Y-axis:", [col for col in numeric_cols if col != x_col])
+                        else:
+                            y_col = None
+                    
+                    # Sample data for performance
+                    max_sample = min(len(df_viz), 10_000_000)  # Cap at 10M to prevent dashboard slowdown
+                    
+                    # Handle slider safely - ensure min < max
+                    if max_sample < 100:
+                        sample_size = max_sample
+                        st.warning(f"Dataset has only {len(df_viz)} rows. Displaying all available data.")
+                    else:
+                        default_sample = min(10000, max_sample)
+                        sample_size = st.slider("Sample size (rows):", 100, max_sample, default_sample)
+                    
+                    df_sample = df_viz.sample(n=min(sample_size, len(df_viz)), random_state=42)  # random_state for reproducibility
+                    
+                    # Create plot
+                    try:
+                        if plot_type == "Line Plot":
+                            fig = px.line(df_sample, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                        elif plot_type == "Scatter Plot":
+                            fig = px.scatter(df_sample, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                        elif plot_type == "Histogram":
+                            fig = px.histogram(df_sample, x=x_col, title=f"Distribution of {x_col}")
+                        elif plot_type == "Box Plot":
+                            fig = px.box(df_sample, y=x_col, title=f"Box Plot of {x_col}")
+                        
+                        fig.update_layout(height=600, width=1200)
+                        st.plotly_chart(fig, width='stretch')
+                        
+                        # Generate filename based on plot type and axes
+                        if plot_type in ["Line Plot", "Scatter Plot"]:
+                            plot_filename = f"{plot_type.lower().replace(' ', '_')}_{x_col}-vs-{y_col}_{sample_size}rows.png"
+                        elif plot_type == "Histogram":
+                            plot_filename = f"histogram_{x_col}_{sample_size}rows.png"
+                        else:  # Box Plot
+                            plot_filename = f"boxplot_{x_col}_{sample_size}rows.png"
+                        
+                        # Download button - use scale=2 for high resolution (2x DPI)
+                        st.download_button(
+                            label="Download plot as PNG",
+                            data=fig.to_image(format="png", width=1200, height=600, scale=2),
+                            file_name=plot_filename,
+                            mime="image/png",
+                        )
+                    except Exception as e:
+                        st.error(f"Error creating plot: {str(e)}")
+                else:
+                    st.warning("No numeric columns found for visualization")
         
         # ==================== TAB 4: STATISTICS ====================
         with tab4:
@@ -271,44 +289,48 @@ if h5_files:
             with st.spinner(f"Loading {stats_dataset}..."):
                 df_stats = get_dataframe(file_path, stats_dataset)
             
-            # Display statistics
-            st.subheader("Descriptive Statistics")
-            
-            # Get numeric columns
-            numeric_df = df_stats.select_dtypes(include=['float64', 'int64'])
-            
-            if not numeric_df.empty:
-                # Statistics summary
-                stats_summary = numeric_df.describe().T
-                stats_summary['missing'] = df_stats.isnull().sum()
-                stats_summary['unique'] = numeric_df.nunique()
-                
-                # Round all numeric values to 5 decimal places to avoid display issues
-                stats_summary = stats_summary.round(5)
-                
-                st.dataframe(stats_summary, width='stretch')
-                
-                # Column-specific stats
-                st.subheader("Column Details")
-                selected_col = st.selectbox("Select column for detailed view:", numeric_df.columns.tolist())
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Mean", f"{numeric_df[selected_col].mean():.4f}")
-                with col2:
-                    st.metric("Median", f"{numeric_df[selected_col].median():.4f}")
-                with col3:
-                    st.metric("Std Dev", f"{numeric_df[selected_col].std():.4f}")
-                with col4:
-                    st.metric("Range", f"{numeric_df[selected_col].max() - numeric_df[selected_col].min():.4f}")
-                
-                # Distribution plot
-                fig = px.histogram(numeric_df, x=selected_col, marginal="box", 
-                                 title=f"Distribution of {selected_col}")
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, width='stretch')
+            # Check if dataset has data
+            if len(df_stats) == 0:
+                st.error("Dataset is empty. No statistics to display.")
             else:
-                st.warning("No numeric columns found for statistics")
+                # Display statistics
+                st.subheader("Descriptive Statistics")
+                
+                # Get numeric columns
+                numeric_df = df_stats.select_dtypes(include=['float64', 'int64'])
+                
+                if not numeric_df.empty:
+                    # Statistics summary
+                    stats_summary = numeric_df.describe().T
+                    stats_summary['missing'] = df_stats.isnull().sum()
+                    stats_summary['unique'] = numeric_df.nunique()
+                    
+                    # Round all numeric values to 5 decimal places to avoid display issues
+                    stats_summary = stats_summary.round(5)
+                    
+                    st.dataframe(stats_summary, width='stretch')
+                    
+                    # Column-specific stats
+                    st.subheader("Column Details")
+                    selected_col = st.selectbox("Select column for detailed view:", numeric_df.columns.tolist())
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Mean", f"{numeric_df[selected_col].mean():.4f}")
+                    with col2:
+                        st.metric("Median", f"{numeric_df[selected_col].median():.4f}")
+                    with col3:
+                        st.metric("Std Dev", f"{numeric_df[selected_col].std():.4f}")
+                    with col4:
+                        st.metric("Range", f"{numeric_df[selected_col].max() - numeric_df[selected_col].min():.4f}")
+                    
+                    # Distribution plot
+                    fig = px.histogram(numeric_df, x=selected_col, marginal="box", 
+                                     title=f"Distribution of {selected_col}")
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, width='stretch')
+                else:
+                    st.warning("No numeric columns found for statistics")
     
     except Exception as e:
         st.error(f"Error loading file: {str(e)}")
