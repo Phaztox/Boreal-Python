@@ -247,9 +247,15 @@ if h5_files:
                     # Create plot
                     try:
                         if plot_type == "Line Plot":
-                            fig = px.line(df_sample, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                            # Sort by index to maintain sequential order (don't sort by x values)
+                            df_sample_sorted = df_sample.sort_index()
+                            fig = px.line(df_sample_sorted, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                            # Make line thinner for large datasets
+                            fig.update_traces(line=dict(width=1))
                         elif plot_type == "Scatter Plot":
                             fig = px.scatter(df_sample, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                            # Make markers smaller for large datasets
+                            fig.update_traces(marker=dict(size=3))
                         elif plot_type == "Histogram":
                             fig = px.histogram(df_sample, x=x_col, title=f"Distribution of {x_col}")
                         elif plot_type == "Box Plot":

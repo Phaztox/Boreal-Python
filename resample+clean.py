@@ -39,22 +39,23 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0,
         # ============ Resample AD_NAVIGATION (25Hz to 100Hz) ============
         # First, remove duplicate timestamps (keep unique time values)
         ADnav_short=np.zeros((len(datasets['AD_NAVIGATION']), 27))
-        k=0
-        for i in range(len(datasets['AD_NAVIGATION'])-1):
-            if datasets['AD_NAVIGATION'][i, 25] == datasets['AD_NAVIGATION'][i+1, 25]:
-                ADnav_short[k,:]=datasets['AD_NAVIGATION'][i,:]
+        ADnav_short[0,:]=datasets['AD_NAVIGATION'][0,:]
+        k=1
+        for i in range(1,len(datasets['AD_NAVIGATION'])):
+            if datasets['AD_NAVIGATION'][i, 25] == ADnav_short[k-1, 25]:
+                continue
             else:
-                ADnav_short[k+1,:]=datasets['AD_NAVIGATION'][i+1,:]
+                ADnav_short[k,:]=datasets['AD_NAVIGATION'][i,:]
                 k+=1
         # Remove rows that are exclusively filled with 0s
         ADnav_short=ADnav_short[~np.all(ADnav_short==0, axis=1)]
 
-        time_original =ADnav_short[:, 25]  # TSmilli column
+        time_original =ADnav_short[:, 26]  # 100Hz column
         
         # Create uniform time grid at 100Hz (10ms intervals)
         t_start, t_end = time_original[0], time_original[-1]
-        duration_ms = t_end-t_start
-        num_samples_adnav = int(duration_ms/10)  # 10ms interval = 100Hz
+        duration_ms = t_end-t_start+1
+        num_samples_adnav = int(duration_ms) 
         time_adnav_tes = np.linspace(t_start, t_end, num_samples_adnav)
         
         # Linear interpolation for each column
@@ -67,14 +68,14 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0,
         Pressures_100hz =np.zeros((len(Pressures_1000hz)//10, 15))
         for i in range(len(Pressures_1000hz)//10):
             Pressures_100hz[i, :] =np.mean(Pressures_1000hz[i*10:(i+1)*10,:], axis=0)
-        Pressures_100hz[:, 14]=datasets['Pressures'][:-9:10, 26]  # TSmilli column
+        Pressures_100hz[:, 14]=datasets['Pressures'][:-9:10, 27]  # 100hz column
         
         time_original_p=Pressures_100hz[:, 14]
         
         # Create uniform time grid
         t_start_p, t_end_p=time_original_p[0], time_original_p[-1]
         duration_ms_p=t_end_p-t_start_p
-        num_samples_p=int(duration_ms_p /10)  # 10ms interval = 100Hz
+        num_samples_p=int(duration_ms_p) 
         time_p = np.linspace(t_start_p, t_end_p, num_samples_p)
         
         # Linear interpolation for each column
@@ -95,7 +96,7 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0,
             h5f_out.attrs['ADnav_short_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
 
             # Save Pressures
-            Resampled_Pressures_label = ['Baro1 HCEM STAT', 'Baro2 HCEM STAT', 'Pressure1HCE2 Sonde 5T', 'Pressure2HCE3 Sonde 5T', 'Pressure3HCE4 Pitot', 'Pressure4HCE5 Pitot', 'Pressure5HCE10 HAUT-BAS', 'Pressure6HCE10 HAUT-BAS', 'Pressure7HCE10 GAUCHE-DROITE', 'Pressure8HCE10 GAUCHE-DROITE', 'LDE1 HAUT-BAS BRUT', 'LDE2 GAUCHE-DROITE BRUT', 'LDE1 HAUT-BAS', 'LDE2 GAUCHE-DROITE', 'TSmilli']
+            Resampled_Pressures_label = ['Baro1 HCEM STAT', 'Baro2 HCEM STAT', 'Pressure1HCE2 Sonde 5T', 'Pressure2HCE3 Sonde 5T', 'Pressure3HCE4 Pitot', 'Pressure4HCE5 Pitot', 'Pressure5HCE10 HAUT-BAS', 'Pressure6HCE10 HAUT-BAS', 'Pressure7HCE10 GAUCHE-DROITE', 'Pressure8HCE10 GAUCHE-DROITE', 'LDE1 HAUT-BAS BRUT', 'LDE2 GAUCHE-DROITE BRUT', 'LDE1 HAUT-BAS', 'LDE2 GAUCHE-DROITE', '100Hz Time']
             h5f_out.create_dataset('Resampled_Pressures', data=Resampled_Pressures, compression="gzip", compression_opts=4)
             h5f_out.create_dataset('time_pressures', data=time_p, compression="gzip", compression_opts=4)
             h5f_out.attrs['Resampled_Pressures_label'] = np.array(Resampled_Pressures_label, dtype='S')
@@ -104,40 +105,22 @@ def resample_and_clean_data(input_h5_file, offsetAD1=0, offsetAD2=0, offsetP1=0,
             h5f_out.create_dataset('Pressures_100hz', data=Pressures_100hz, compression="gzip", compression_opts=4)
             h5f_out.attrs['Pressures_100hz_label'] = np.array(Resampled_Pressures_label, dtype='S')
 
-        return Pressures_100hz, Resampled_Pressures
+        return Pressures_100hz, Resampled_Pressures, resampled_ADnav_25to100
 
-a, b = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offsetAD1=0, offsetAD2=670927, offsetP1=0, offsetP2=0, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
+a, b, c = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offsetAD1=0, offsetAD2=0, offsetP1=0, offsetP2=0, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
 
-# Writes the number of missing values of a h5 file and at which line they are located. 
-# These missing values are detected by looking at the difference between two consecutive timestamps.
-# expected interval in milliseconds is x every x/10 lines (e.g., 10,10,10,10,10,10,16,16,16,16,16,16,16,22,22,22,22,22,22,...)
-# the expected interval in rounded to avoid minor fluctuations.
-def find_missing_timestamps(h5_file, dataset_name, expected_interval_ms):
-    with h5py.File(h5_file, 'r') as h5f:
-        data = h5f[dataset_name][:]
-        timestamps = data[:, -2] 
-
-        missing_indices = []
-        for i in range(1, len(timestamps)):
-            time_diff = timestamps[i] - timestamps[i - 1]
-            rounded_diff = round(time_diff)
-            if rounded_diff != 0 and abs(rounded_diff - expected_interval_ms) > 10:
-                missing_indices.append(i)
-
-        print(f"Number of missing timestamps: {len(missing_indices)}")
-        print("Indices of missing timestamps:", missing_indices)
-
-# find_missing_timestamps("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", 'AD_NAVIGATION', 60)
 
 with h5py.File("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", 'r') as h5f_test:
-    start_time=h5f_test['AD_NAVIGATION'][0,0]
-    end_time=h5f_test['AD_NAVIGATION'][-1,0]
-    print(f"La taille est: {len(h5f_test['AD_NAVIGATION'][:,0])}")
-    print(f"Première valeur de la colonne time: {round(start_time)}"+f"\nDernière valeur de la colonne time: {round(end_time)}"+f"\nDifférence /2: {round((end_time-start_time)/2)} ms")
-    print(f"Nombre de valeurs manquantes: {round((end_time-start_time)/2)-len(h5f_test['AD_NAVIGATION'][:,0])}")
+    colonne_time=-1
+    start_time=h5f_test['AD_NAVIGATION'][0,colonne_time]
+    end_time=h5f_test['AD_NAVIGATION'][-1,colonne_time]
+    print(f"La taille est: {len(h5f_test['AD_NAVIGATION'][:,colonne_time])}")
+    print(f"Première valeur de la colonne time: {round(start_time)}"+f"\nDernière valeur de la colonne time: {round(end_time)}"+f"\nDifférence: {round((end_time-start_time)/1)}")
+    print(f"Nombre de valeurs manquantes: {round((end_time-start_time)/1)-len(h5f_test['AD_NAVIGATION'][:,colonne_time])}")
     val_missing=[]
-    for i in range(len(h5f_test['AD_NAVIGATION'][:,0])-1):
-        if h5f_test['AD_NAVIGATION'][i+1,0] - h5f_test['AD_NAVIGATION'][i,0] != 2:
+    ad_nav_times = h5f_test['AD_NAVIGATION'][:, colonne_time]
+    for i in range(len(ad_nav_times) - 1):
+        if ad_nav_times[i+1] - ad_nav_times[i] != 1:
             val_missing.append(i)
     print(f"Indices des valeurs manquantes: {val_missing}")
     print(f"Nombre de valeurs manquantes détectées: {len(val_missing)}")
@@ -151,4 +134,22 @@ plt.title('Pressure1 5T - 100hz')
 plt.xlabel("Time")
 plt.ylabel("Pressure")
 plt.legend()
+
+# simple plot for resampled_ADnav_25to100 roll and Pitch columns
+plt.figure(figsize=(12, 6))
+plt.plot(c[:, 15], label='Roll', linewidth=0.5, color='green')
+plt.plot(c[:, 16], label='Pitch', linewidth=0.5, color='red')
+plt.title('Resampled ADnav 25Hz to 100Hz - Roll and Pitch Columns')
+plt.xlabel("Time")
+plt.ylabel("Value")
+plt.legend()
+
+# simple plot for the path of the flight using resampled_ADnav_25to100 Latitude and Longitude columns
+plt.figure(figsize=(12, 6))
+plt.plot(c[:, 5], c[:, 6], label='Flight Path', linewidth=0.5, color='purple')
+plt.title('Flight Path using Latitude and Longitude')
+plt.xlabel("Longitude")
+plt.ylabel("Latitude")
+plt.legend()
+
 plt.show()
