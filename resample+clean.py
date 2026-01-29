@@ -11,43 +11,64 @@ import h5py
 from pathlib import Path
 from scipy.signal import resample, resample_poly
 import matplotlib.pyplot as plt
-from scipy import stats
-
-def detect_and_fill_outliers(data, column_idx=0, z_threshold=3):
+def detect_and_fill_outliers(data, column_idx=0, iqr_multiplier=1.5):
     """
-    Detect outliers using Z-score method and fill them using linear interpolation
-    from the nearest non-outlier values.
+    Detect outliers using IQR (Interquartile Range) method and fill them using linear interpolation.
+    Values below Q1 - iqr_multiplier*IQR or above Q3 + iqr_multiplier*IQR are considered outliers.
     
     Parameters:
+    -----------
     data : numpy array
         The data array with shape (n_samples, n_columns)
-    column_idx : int
-        The column index to check for outliers
-    z_threshold : float
-        Z-score threshold for outlier detection (default=3)
+    column_idx : int or list of int
+        The column index(es) to check for outliers. Can be a single int or a list of ints.
+    iqr_multiplier : float
+        Multiplier for IQR (default=1.5, use 3.0 for more conservative detection)
     
     Returns:
+    --------
     cleaned_data : numpy array
         Data with outliers replaced by interpolated values
-    outlier_mask : numpy array (boolean)
-        Boolean mask indicating which values were outliers
+    outlier_masks : dict
+        Dictionary mapping column indices to their boolean outlier masks
     """
     cleaned_data = data.copy()
-    column_data = data[:, column_idx]
-    # Calculate Z-scores
-    z_scores = np.abs(stats.zscore(column_data, nan_policy='omit'))
-    # Identify outliers
-    outlier_mask = z_scores > z_threshold
-    n_outliers = np.sum(outlier_mask)
     
-    if n_outliers > 0:
-        valid_indices = np.where(~outlier_mask)[0]
-        valid_values = column_data[valid_indices]
-        outlier_indices = np.where(outlier_mask)[0]
-        interpolated_values = np.interp(outlier_indices, valid_indices, valid_values)
-        cleaned_data[outlier_indices, column_idx] = interpolated_values
+    # Handle single column or multiple columns
+    if isinstance(column_idx, int):
+        column_indices = [column_idx]
+    else:
+        column_indices = list(column_idx)
     
-    return cleaned_data, outlier_mask
+    outlier_masks = {}
+    
+    for col_idx in column_indices:
+        column_data = data[:, col_idx]
+
+        # Calculate quartiles and IQR
+        Q1 = np.percentile(column_data, 25)
+        Q3 = np.percentile(column_data, 75)
+        IQR = Q3 - Q1
+        
+        # Define outlier bounds
+        lower_bound = Q1 - iqr_multiplier * IQR
+        upper_bound = Q3 + iqr_multiplier * IQR
+        
+        # Identify outliers
+        outlier_mask = (column_data < lower_bound) | (column_data > upper_bound)
+        n_outliers = np.sum(outlier_mask)
+        
+        if n_outliers > 0:
+            valid_indices = np.where(~outlier_mask)[0]
+            valid_values = column_data[valid_indices]
+            outlier_indices = np.where(outlier_mask)[0]
+            interpolated_values = np.interp(outlier_indices, valid_indices, valid_values)
+            
+            cleaned_data[outlier_indices, col_idx] = interpolated_values
+        
+        outlier_masks[col_idx] = outlier_mask
+    
+    return cleaned_data, outlier_masks
 
 def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir=None):
     input_filename = Path(input_h5_file).stem  # Gets the filename without extension
@@ -130,21 +151,35 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         for i in range(len(datasets['TH'])):
             TH_100hz[i, 0]=datasets['TH'][i, 5] 
             TH_100hz[i, 1]=datasets['TH'][i, 6] 
-            TH_100hz[i, -1]=datasets['TH'][i, -1]  
-        num_samples_TH=int(TH_100hz[-1, -1]-TH_100hz[0, -1])+1
-        time_TH=np.linspace(TH_100hz[0, -1], TH_100hz[-1, -1], num_samples_TH)
-        time_original_TH=TH_100hz[:, -1]
-        Resampled_TH=np.zeros((num_samples_TH, TH_100hz.shape[1]))
-        for col in range(TH_100hz.shape[1]):
-            Resampled_TH[:, col] = np.interp(time_TH, time_original_TH, TH_100hz[:, col])
+            TH_100hz[i, -1]=datasets['TH'][i, -1] 
+        
+        # Detect and fill outliers before resampling
+        TH_100hz_clean, TH_outlier_mask = detect_and_fill_outliers(
+            TH_100hz, 
+            column_idx=[0, 1], 
+            iqr_multiplier=1.0  # Adjust this: lower = more aggressive outlier detection
+        )
+
+        num_samples_TH=int(TH_100hz_clean[-1, -1]-TH_100hz_clean[0, -1])+1
+        time_TH=np.linspace(TH_100hz_clean[0, -1], TH_100hz_clean[-1, -1], num_samples_TH)
+        time_original_TH=TH_100hz_clean[:, -1]
+        Resampled_TH=np.zeros((num_samples_TH, TH_100hz_clean.shape[1]))
+        for col in range(TH_100hz_clean.shape[1]):
+            Resampled_TH[:, col] = np.interp(time_TH, time_original_TH, TH_100hz_clean[:, col])
 
         # Resample T2
         T2_100hz=np.zeros((len(datasets['T2']), 2))
         for i in range(len(datasets['T2'])):
             T2_100hz[i, 0]=datasets['T2'][i, 2]  
             T2_100hz[i, -1]=datasets['T2'][i, -1] 
+        
         # Detect and fill outliers before resampling
-        T2_100hz_clean, T2_outlier_mask = detect_and_fill_outliers(T2_100hz, column_idx=0, z_threshold=0.2)
+        T2_100hz_clean, T2_outlier_mask = detect_and_fill_outliers(
+            T2_100hz, 
+            column_idx=[0], 
+            iqr_multiplier=1  # Adjust this: lower = more aggressive outlier detection
+        )
+        
         num_samples_T2=int(T2_100hz_clean[-1, -1]-T2_100hz_clean[0, -1])+1
         time_T2=np.linspace(T2_100hz_clean[0, -1], T2_100hz_clean[-1, -1], num_samples_T2)
         time_original_T2=T2_100hz_clean[:, -1]
