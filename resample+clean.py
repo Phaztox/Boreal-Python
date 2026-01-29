@@ -11,6 +11,43 @@ import h5py
 from pathlib import Path
 from scipy.signal import resample, resample_poly
 import matplotlib.pyplot as plt
+from scipy import stats
+
+def detect_and_fill_outliers(data, column_idx=0, z_threshold=3):
+    """
+    Detect outliers using Z-score method and fill them using linear interpolation
+    from the nearest non-outlier values.
+    
+    Parameters:
+    data : numpy array
+        The data array with shape (n_samples, n_columns)
+    column_idx : int
+        The column index to check for outliers
+    z_threshold : float
+        Z-score threshold for outlier detection (default=3)
+    
+    Returns:
+    cleaned_data : numpy array
+        Data with outliers replaced by interpolated values
+    outlier_mask : numpy array (boolean)
+        Boolean mask indicating which values were outliers
+    """
+    cleaned_data = data.copy()
+    column_data = data[:, column_idx]
+    # Calculate Z-scores
+    z_scores = np.abs(stats.zscore(column_data, nan_policy='omit'))
+    # Identify outliers
+    outlier_mask = z_scores > z_threshold
+    n_outliers = np.sum(outlier_mask)
+    
+    if n_outliers > 0:
+        valid_indices = np.where(~outlier_mask)[0]
+        valid_values = column_data[valid_indices]
+        outlier_indices = np.where(outlier_mask)[0]
+        interpolated_values = np.interp(outlier_indices, valid_indices, valid_values)
+        cleaned_data[outlier_indices, column_idx] = interpolated_values
+    
+    return cleaned_data, outlier_mask
 
 def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir=None):
     input_filename = Path(input_h5_file).stem  # Gets the filename without extension
@@ -78,7 +115,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         
         # Create uniform time grid
         t_start_p, t_end_p=time_original_p[0], time_original_p[-1]
-        duration_ms_p=t_end_p-t_start_p
+        duration_ms_p=t_end_p-t_start_p+1
         num_samples_p=int(duration_ms_p) 
         time_p = np.linspace(t_start_p, t_end_p, num_samples_p)
         
@@ -94,9 +131,10 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
             TH_100hz[i, 0]=datasets['TH'][i, 5] 
             TH_100hz[i, 1]=datasets['TH'][i, 6] 
             TH_100hz[i, -1]=datasets['TH'][i, -1]  
-        time_TH=np.linspace(TH_100hz[0, -1], TH_100hz[-1, -1], int(TH_100hz[-1, -1]-TH_100hz[0, -1]))
+        num_samples_TH=int(TH_100hz[-1, -1]-TH_100hz[0, -1])+1
+        time_TH=np.linspace(TH_100hz[0, -1], TH_100hz[-1, -1], num_samples_TH)
         time_original_TH=TH_100hz[:, -1]
-        Resampled_TH=np.zeros((int(TH_100hz[-1, -1]-TH_100hz[0, -1]), TH_100hz.shape[1]))
+        Resampled_TH=np.zeros((num_samples_TH, TH_100hz.shape[1]))
         for col in range(TH_100hz.shape[1]):
             Resampled_TH[:, col] = np.interp(time_TH, time_original_TH, TH_100hz[:, col])
 
@@ -104,12 +142,16 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         T2_100hz=np.zeros((len(datasets['T2']), 2))
         for i in range(len(datasets['T2'])):
             T2_100hz[i, 0]=datasets['T2'][i, 2]  
-            T2_100hz[i, -1]=datasets['T2'][i, -1]  
-        time_T2=np.linspace(T2_100hz[0, -1], T2_100hz[-1, -1], int(T2_100hz[-1, -1]-T2_100hz[0, -1]))
-        time_original_T2=T2_100hz[:, -1]
-        Resampled_T2=np.zeros((int(T2_100hz[-1, -1]-T2_100hz[0, -1]), T2_100hz.shape[1]))
-        for col in range(T2_100hz.shape[1]):
-            Resampled_T2[:, col] = np.interp(time_T2, time_original_T2, T2_100hz[:, col])
+            T2_100hz[i, -1]=datasets['T2'][i, -1] 
+        # Detect and fill outliers before resampling
+        T2_100hz_clean, T2_outlier_mask = detect_and_fill_outliers(T2_100hz, column_idx=0, z_threshold=0.2)
+        num_samples_T2=int(T2_100hz_clean[-1, -1]-T2_100hz_clean[0, -1])+1
+        time_T2=np.linspace(T2_100hz_clean[0, -1], T2_100hz_clean[-1, -1], num_samples_T2)
+        time_original_T2=T2_100hz_clean[:, -1]
+        # Resample with interpolation
+        Resampled_T2=np.zeros((num_samples_T2, T2_100hz_clean.shape[1]))
+        for col in range(T2_100hz_clean.shape[1]):
+            Resampled_T2[:, col] = np.interp(time_T2, time_original_T2, T2_100hz_clean[:, col])
         
         # ============ Save to HDF5 ============
         output_path = os.path.join(output_dir, output_filename)
