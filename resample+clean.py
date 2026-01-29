@@ -269,7 +269,7 @@ plt.legend()
 # simple plot for TH and T2 resampled data
 plt.figure(figsize=(12, 6))
 plt.plot(Resampled_TH[:, 0], label='Resampled TH Temp1', linewidth=0.5, color='brown')
-plt.plot(Resampled_T2[:, 0], label='Resampled T2 Temp2', linewidth=0.5, color='cyan')
+plt.plot(Resampled_T2[:, 0], label='Resampled T2 Temp2', linewidth=0.5, color='orange')
 plt.title('Resampled TH and T2 Temperature Data')
 plt.xlabel("Time")
 plt.ylabel("Temperature")
