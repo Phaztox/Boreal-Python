@@ -52,6 +52,8 @@ resultats_test/
 *.asv
 *.mex*
 slprj/
+matlab/
+**/matlab/
 
 # OS
 Thumbs.db

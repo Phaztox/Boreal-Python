@@ -53,7 +53,7 @@ st.markdown("Interactive dashboard for exploring HDF5 flight data files")
 st.sidebar.header("File Selection")
 
 # Find HDF5 files
-results_dir = "C:\\Users\\Antonin\\Desktop\\Project Results"
+results_dir = "Project Results"
 if os.path.exists(results_dir):
     h5_files = [f for f in os.listdir(results_dir) if f.endswith('.h5')]
 else:
