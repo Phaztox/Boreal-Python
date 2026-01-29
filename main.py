@@ -15,7 +15,7 @@ if __name__ == '__main__':
         "C:\\Users\\Antonin\\Desktop\\Antonin\\folder bin\\MomentaVol5_clean.bin",
         offset1=7,
         offset2=0,
-        output_dir="C:\\Users\\Antonin\\Desktop\\Project Results"
+        output_dir="Project Results"
     )
     print(f"Successfully created: {output_file}")
     

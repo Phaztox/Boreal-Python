@@ -186,7 +186,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
         return Resampled_ADnav_25to100, Pressures_100hz, Resampled_Pressures, Resampled_TH, Resampled_T2
 
-Resampled_ADnav_25to100, Pressures_100hz, Resampled_Pressures, Resampled_TH, Resampled_T2 = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir="C:\\Users\\Antonin\\Desktop\\Project Results")
+Resampled_ADnav_25to100, Pressures_100hz, Resampled_Pressures, Resampled_TH, Resampled_T2 = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir="Project Results")
 
 
 with h5py.File("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", 'r') as h5f_test:
