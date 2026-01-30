@@ -1,0 +1,18 @@
+# Core data processing libraries
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+h5py>=3.8.0
+
+# Visualization libraries
+matplotlib>=3.7.0
+plotly>=5.14.0
+
+# Web dashboard framework
+streamlit>=1.25.0
+
+# GUI framework (usually comes with Python)
+# tkinter - built-in with Python
+
+# Standard library packages (no installation needed):
+# os, struct, time, warnings, pathlib, threading, subprocess
