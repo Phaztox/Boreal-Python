@@ -275,4 +275,28 @@ plt.xlabel("Time")
 plt.ylabel("Temperature")
 plt.legend()
 
+# 3D plot for the 'Heading' label off the AD_NAVIGATION database (column 17).
+# Since it's a heading consisting of angles from 0 to 360 degrees, we can plot it in a cylinder manner, the circle being the angle and the height being time.
+from mpl_toolkits.mplot3d import Axes3D
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection='3d')
+ax.set_title('3D Plot of Heading over Time')
+ax.set_xlabel('Time')
+ax.set_ylabel('Heading (degrees)')
+ax.set_zlabel('Radius')
+
+time_axis = np.arange(Resampled_ADnav_25to100.shape[0])
+heading_angles = Resampled_ADnav_25to100[:, 17]  # Heading column
+heading_angles = np.where(heading_angles == 360, 0, heading_angles)  # Replace 360 with 0
+
+radius = 1  # Fixed radius for the cylinder
+x = time_axis
+y = radius * np.cos(np.radians(heading_angles))
+z = radius * np.sin(np.radians(heading_angles))
+
+ax.plot(x, y, z, label='Heading', linewidth=0.3)
+ax.set_box_aspect([3, 1, 1])  # Stretch time axis
+ax.legend()
+
+
 plt.show()
