@@ -321,7 +321,7 @@ class FlightDataProcessorGUI:
             
             total_time = time.time() - self.start_time
             self.update_progress("Processing completed successfully!", self.total_steps)
-            self.log_message(f"\\n[SUCCESS] All processing completed successfully!")
+            self.log_message(f"[SUCCESS] All processing completed successfully!")
             self.log_message(f"Total processing time: {total_time:.2f} seconds")
             
             # Launch dashboard if option is enabled
@@ -330,7 +330,7 @@ class FlightDataProcessorGUI:
             
         except Exception as e:
             self.status_label.config(text="Error occurred during processing")
-            self.log_message(f"\\n[ERROR] Error: {str(e)}")
+            self.log_message(f"[ERROR] Error: {str(e)}")
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
         
         finally:
