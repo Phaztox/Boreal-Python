@@ -29,6 +29,8 @@ def load_binary_data(file_path, offset1, offset2):
     """Load binary file and return matrix and line count"""
     data = np.memmap(file_path, dtype=np.uint8, mode='r')
     total_lines = data.size // 1024
+    # remove lines where the first two colomns are not 00 
+    # valid_lines = [i for i in range(total_lines) if data[i*1024] == 0 and data[i*1024+1] == 0]
     line_count = total_lines - (offset1 + offset2)
     if line_count <= 0:
         raise ValueError("Offsets too large for file size")
