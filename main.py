@@ -1,12 +1,5 @@
-"""
-Flight Data Processing GUI
-A user-friendly interface to extract and process flight data files.
-Choose parameters and enable/disable functions as needed.
-"""
-
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from pathlib import Path
 import threading
 import subprocess
 import os
@@ -18,15 +11,10 @@ class FlightDataProcessorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Flight Data Processor")
-        self.root.geometry("800x700")
-        self.root.resizable(True, True)
-        self.root.minsize(700, 600)
-        
-        # Set up cleanup on window close
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.geometry("800x750")
         
         # Variables
-        self.input_file_var = tk.StringVar(value="C:\\Users\\Antonin\\Desktop\\Antonin\\folder bin\\MomentaVol5_clean.bin")
+        self.input_file_var = tk.StringVar()
         self.output_dir_var = tk.StringVar(value="Project Results")
         
         # Extract function variables
@@ -40,102 +28,29 @@ class FlightDataProcessorGUI:
         self.resample_offset2 = tk.IntVar(value=0)
         self.resample_offsetP1 = tk.IntVar(value=0)
         self.resample_offsetP2 = tk.IntVar(value=0)
-        
-        # Workflow variables
         self.use_extract_output = tk.BooleanVar(value=True)
         self.resample_input_file_var = tk.StringVar()
         
-        # Dashboard launch option
+        # Options
         self.launch_dashboard = tk.BooleanVar(value=True)
         
         # Progress tracking
         self.start_time = None
         self.current_step = 0
         self.total_steps = 0
-        
-        # Dashboard process tracking
         self.dashboard_process = None
         
         self.setup_ui()
-        
-        # Check for existing dashboard after UI is ready
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.detect_existing_dashboard()
     
     def setup_ui(self):
-        # Create main container with scrollbar
-        main_container = ttk.Frame(self.root)
-        main_container.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Configure root grid weights
+        # Main frame with scrollbar
+        main_frame = ttk.Frame(self.root, padding="20")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=10)
+        main_frame.columnconfigure(1, weight=1)
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_container.columnconfigure(0, weight=1)
-        main_container.rowconfigure(0, weight=1)
-        
-        # Create canvas and scrollbar
-        self.canvas = tk.Canvas(main_container, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=self.canvas.yview)
-        scrollable_frame = ttk.Frame(self.canvas)
-        
-        # Store reference for later use
-        self.scrollable_frame = scrollable_frame
-        
-        # Configure scrolling
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-        
-        # Make the canvas adjust to its container size
-        def _on_canvas_configure(event):
-            # Update the inner frame to fit the canvas width
-            canvas_width = event.width
-            self.canvas.itemconfig(self.canvas_frame_id, width=canvas_width)
-        
-        self.canvas.bind("<Configure>", _on_canvas_configure)
-        
-        # Store the frame id for later reference
-        self.canvas_frame_id = self.canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Bind mousewheel to canvas and root window for better responsiveness
-        def _on_mousewheel(event):
-            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        # Bind to multiple widgets for better mouse wheel response
-        self.canvas.bind("<MouseWheel>", _on_mousewheel)
-        self.root.bind("<MouseWheel>", _on_mousewheel)
-        scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
-        
-        # Also bind focus events to ensure scrolling works
-        def _bind_mousewheel(event):
-            self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        def _unbind_mousewheel(event):
-            self.canvas.unbind_all("<MouseWheel>")
-            
-        # Make sure canvas can receive focus and bind enter/leave events
-        self.canvas.bind("<Enter>", _bind_mousewheel)
-        self.canvas.bind("<Leave>", _unbind_mousewheel)
-        
-        # Set initial focus to canvas to ensure mouse wheel works
-        self.root.after(100, lambda: self.canvas.focus_set())
-        
-        # Place canvas and scrollbar with proper weights for responsiveness
-        self.canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        
-        # Configure grid weights for responsiveness
-        main_container.columnconfigure(0, weight=1)  # Canvas column expands
-        main_container.rowconfigure(0, weight=1)     # Canvas row expands
-        self.root.columnconfigure(0, weight=1)       # Root window expands
-        self.root.rowconfigure(0, weight=1)          # Root window expands
-        
-        # Main frame inside scrollable area
-        main_frame = ttk.Frame(scrollable_frame, padding="20")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        main_frame.columnconfigure(1, weight=1)
-        scrollable_frame.columnconfigure(0, weight=1)
-        scrollable_frame.rowconfigure(0, weight=1)
         
         row = 0
         
@@ -240,21 +155,6 @@ class FlightDataProcessorGUI:
         # Status label
         self.status_label = ttk.Label(main_frame, text="Ready to process data...")
         self.status_label.grid(row=row, column=0, columnspan=3, pady=5)
-        row += 1
-        
-        # Output text area
-        output_frame = ttk.LabelFrame(main_frame, text="Output", padding="5")
-        output_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
-        output_frame.columnconfigure(0, weight=1)
-        output_frame.rowconfigure(0, weight=1)
-        main_frame.rowconfigure(row, weight=1)
-        
-        self.output_text = tk.Text(output_frame, height=8, wrap=tk.WORD)
-        scrollbar = ttk.Scrollbar(output_frame, orient="vertical", command=self.output_text.yview)
-        self.output_text.configure(yscrollcommand=scrollbar.set)
-        
-        self.output_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
     
     def browse_input_file(self):
         filename = filedialog.askopenfilename(
@@ -291,10 +191,8 @@ class FlightDataProcessorGUI:
             self.resample_input_button.grid_remove()
     
     def log_message(self, message):
-        self.output_text.insert(tk.END, message + "\n")
-        self.output_text.see(tk.END)
-        self.root.update_idletasks()        # Update scroll region after content change
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))    
+        print(message)
+        self.root.update_idletasks()    
     def update_progress(self, step_name, current_step=None):
         """Update progress bar and show ETA"""
         if current_step is not None:
@@ -357,8 +255,7 @@ class FlightDataProcessorGUI:
     
     def run_processing(self):
         try:
-            # Clear output and initialize progress
-            self.output_text.delete(1.0, tk.END)
+            # Initialize progress
             self.start_time = time.time()
             self.current_step = 0
             
@@ -445,33 +342,10 @@ class FlightDataProcessorGUI:
     def launch_dashboard_app(self):
         """Launch the dashboard using the batch file"""
         try:
-            self.log_message("\\n[INFO] Launching dashboard...")
-            
-            # Path to the batch file in the current directory
-            bat_file_path = os.path.join(os.getcwd(), "launch_dashboard.bat")
-            
-            if os.path.exists(bat_file_path):
-                # Launch the batch file
-                subprocess.Popen([bat_file_path], shell=True)
-                self.log_message("[SUCCESS] Dashboard launched successfully!")
-            else:
-                self.log_message(f"[ERROR] Dashboard batch file not found: {bat_file_path}")
-                messagebox.showwarning("Warning", f"Dashboard batch file not found: {bat_file_path}")
-                
-        except Exception as e:
-            self.log_message(f"[ERROR] Error launching dashboard: {str(e)}")
-            messagebox.showerror("Error", f"Failed to launch dashboard: {str(e)}")
-    
-    def launch_dashboard_app(self):
-        """Launch the dashboard using the batch file"""
-        try:
             self.log_message("\n[INFO] Launching dashboard...")
-            
-            # Path to the batch file in the current directory
             bat_file_path = os.path.join(os.getcwd(), "launch_dashboard.bat")
             
             if os.path.exists(bat_file_path):
-                # Launch the batch file and store process reference
                 self.dashboard_process = subprocess.Popen([bat_file_path], shell=True)
                 self.log_message("[SUCCESS] Dashboard launched successfully!")
             else:
@@ -485,90 +359,53 @@ class FlightDataProcessorGUI:
     def detect_existing_dashboard(self):
         """Detect if dashboard is already running"""
         try:
-            # Check for Streamlit processes on common ports
             result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, shell=True, encoding='utf-8', errors='ignore')
             dashboard_ports = []
             
             for line in result.stdout.split('\n'):
-                for port in ['8501', '8502', '8503']:  # Common Streamlit ports
+                for port in ['8501', '8502', '8503']:
                     if f':{port}' in line and 'LISTENING' in line:
                         dashboard_ports.append(port)
             
             if dashboard_ports:
                 unique_ports = list(set(dashboard_ports))
                 self.log_message(f"[INFO] Detected existing dashboard(s) on port(s): {', '.join(unique_ports)}")
-                self.log_message("[INFO] Use 'Shutdown Dashboard' button to close them if needed")
-        except Exception as e:
-            self.log_message(f"[WARNING] Could not detect existing dashboards: {str(e)}")
+        except Exception:
+            pass
     
     def shutdown_dashboard(self):
-        """Shutdown the dashboard process if it's running"""
+        """Shutdown the dashboard process"""
         try:
-            # First try tracked process
             if self.dashboard_process:
-                try:
-                    self.dashboard_process.terminate()
-                    self.dashboard_process.wait(timeout=5)
-                    self.log_message("[INFO] Dashboard process terminated")
-                except subprocess.TimeoutExpired:
-                    self.dashboard_process.kill()
-                    self.log_message("[INFO] Dashboard process killed (forced)")
-                except Exception as e:
-                    self.log_message(f"[ERROR] Could not terminate tracked process: {str(e)}")
-                finally:
-                    self.dashboard_process = None
-                    
-            # Also try to find and kill any Streamlit processes
+                self.dashboard_process.terminate()
+                self.log_message("[INFO] Dashboard process terminated")
+                self.dashboard_process = None
             self.kill_streamlit_processes()
-            
         except Exception as e:
             self.log_message(f"[ERROR] Error shutting down dashboard: {str(e)}")
     
     def kill_streamlit_processes(self):
-        """Force kill any Streamlit processes using common ports"""
-        killed_processes = []
+        """Force kill Streamlit processes using common ports"""
         try:
-            # Find processes using Streamlit ports (8501, 8502, 8503)
+            # Kill by port
             netstat_result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, shell=True, encoding='utf-8', errors='ignore')
+            processes_killed = 0
             
-            streamlit_ports = ['8501', '8502', '8503']
-            processes_to_kill = set()  # Use set to avoid duplicates
-            
-            for line in netstat_result.stdout.split('\\n'):
-                for port in streamlit_ports:
+            for line in netstat_result.stdout.split('\n'):
+                for port in ['8501', '8502', '8503']:
                     if f':{port}' in line and 'LISTENING' in line:
                         parts = line.split()
-                        if len(parts) > 4:
-                            pid = parts[-1]
-                            if pid.isdigit():
-                                processes_to_kill.add(pid)
+                        if len(parts) > 4 and parts[-1].isdigit():
+                            subprocess.run(['taskkill', '/f', '/pid', parts[-1]], capture_output=True, encoding='utf-8', errors='ignore')
+                            processes_killed += 1
             
-            # Kill all found processes
-            for pid in processes_to_kill:
-                try:
-                    result = subprocess.run(['taskkill', '/f', '/pid', pid], 
-                                         capture_output=True, text=True, shell=True, encoding='utf-8', errors='ignore', check=False)
-                    if result.returncode == 0:
-                        killed_processes.append(pid)
-                        self.log_message(f"[SUCCESS] Killed dashboard process {pid}")
-                    else:
-                        self.log_message(f"[WARNING] Could not kill process {pid}: {result.stderr.strip()}")
-                except Exception as e:
-                    self.log_message(f"[ERROR] Error killing process {pid}: {str(e)}")
+            # Kill by process name
+            subprocess.run(['taskkill', '/f', '/im', 'streamlit.exe'], capture_output=True, encoding='utf-8', errors='ignore')
             
-            # Also try to kill by process name
-            try:
-                result = subprocess.run(['taskkill', '/f', '/im', 'streamlit.exe'], 
-                                      capture_output=True, text=True, shell=True, encoding='utf-8', errors='ignore', check=False)
-                if result.returncode == 0:
-                    self.log_message("[SUCCESS] Killed streamlit.exe processes")
-            except Exception:
-                pass
-            
-            if killed_processes:
-                self.log_message(f"[INFO] Total processes killed: {len(killed_processes)}")
+            if processes_killed > 0:
+                self.log_message(f"[SUCCESS] Killed {processes_killed} dashboard processes")
             else:
-                self.log_message("[INFO] No dashboard processes found to kill")
+                self.log_message("[INFO] No dashboard processes found")
                 
         except Exception as e:
             self.log_message(f"[ERROR] Error during process cleanup: {str(e)}")
@@ -576,13 +413,9 @@ class FlightDataProcessorGUI:
     
     def on_closing(self):
         """Handle GUI closing event"""
-        # Shutdown dashboard if running
-        if self.dashboard_process:
-            if messagebox.askokcancel("Quit", "Dashboard is running. Close dashboard and quit application?"):
-                self.shutdown_dashboard()
-                self.root.destroy()
-        else:
-            self.root.destroy()
+        if self.dashboard_process and messagebox.askokcancel("Quit", "Dashboard is running. Close dashboard and quit?"):
+            self.shutdown_dashboard()
+        self.root.destroy()
 
 def main():
     root = tk.Tk()
