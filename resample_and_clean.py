@@ -8,9 +8,21 @@ import os
 import pandas as pd
 import numpy as np
 import h5py
+import time
 from pathlib import Path
 from scipy.signal import resample, resample_poly
 import matplotlib.pyplot as plt
+
+def checkpoint(name, checkpoints_dict):
+    """Record a timing checkpoint"""
+    current_time = time.time()
+    if name in checkpoints_dict:
+        elapsed = current_time - checkpoints_dict[name]
+        print(f"  [OK] {name}: {elapsed:.2f}s")
+    else:
+        checkpoints_dict[name] = current_time
+    return current_time
+
 def detect_and_fill_outliers(data, column_idx=0, iqr_multiplier=1.5):
     """
     Detect outliers using IQR (Interquartile Range) method and fill them using linear interpolation.
@@ -71,8 +83,20 @@ def detect_and_fill_outliers(data, column_idx=0, iqr_multiplier=1.5):
     return cleaned_data, outlier_masks
 
 def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir=None, progress_callback=None):
+    # Initialize timing
+    start_time = time.time()
+    checkpoints = {}
+    
     input_filename = Path(input_h5_file).stem  # Gets the filename without extension
     output_filename = f"Resampled_{input_filename}.h5"
+    
+    print(f"\n{'='*50}")
+    print(f"Processing: {input_h5_file}")
+    print(f"{'='*50}\n")
+    
+    print("[1/6] Loading HDF5 file and extracting datasets...")
+    checkpoint_start = checkpoint("HDF5 load", checkpoints)
+    
     with h5py.File(input_h5_file, 'r') as h5f:
         # Find datasets and their labels
         datasets = {}
@@ -97,128 +121,160 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
                 if isinstance(columns[0], bytes):
                     columns = [col.decode('utf-8') if isinstance(col, bytes) else col for col in columns]
                 labels[key] = columns
+    
+    print(f"  [OK] HDF5 load: {time.time() - checkpoint_start:.2f}s")
         
-        # ============ Resample AD_NAVIGATION (25Hz to 100Hz) ============
-        # First, remove duplicate timestamps (keep unique time values)
-        ADnav_short=np.zeros((len(datasets['AD_NAVIGATION']), 27))
-        ADnav_short[0,:]=datasets['AD_NAVIGATION'][0,:]
-        k=1
-        for i in range(1,len(datasets['AD_NAVIGATION'])):
-            if datasets['AD_NAVIGATION'][i, 25] == ADnav_short[k-1, 25]:
-                continue
-            else:
-                ADnav_short[k,:]=datasets['AD_NAVIGATION'][i,:]
-                k+=1
-        # Remove rows that are exclusively filled with 0s
-        ADnav_short=ADnav_short[~np.all(ADnav_short==0, axis=1)]
+    print("[2/6] Processing AD_NAVIGATION resampling (25Hz to 100Hz)...")
+    checkpoint_start = checkpoint("AD_NAVIGATION resampling", checkpoints)
+        
+    # ============ Resample AD_NAVIGATION (25Hz to 100Hz) ============
+    # First, remove duplicate timestamps (keep unique time values)
+    ADnav_short=np.zeros((len(datasets['AD_NAVIGATION']), 27))
+    ADnav_short[0,:]=datasets['AD_NAVIGATION'][0,:]
+    k=1
+    for i in range(1,len(datasets['AD_NAVIGATION'])):
+        if datasets['AD_NAVIGATION'][i, 25] == ADnav_short[k-1, 25]:
+            continue
+        else:
+            ADnav_short[k,:]=datasets['AD_NAVIGATION'][i,:]
+            k+=1
+    # Remove rows that are exclusively filled with 0s
+    ADnav_short=ADnav_short[~np.all(ADnav_short==0, axis=1)]
 
-        time_original =ADnav_short[:, 26]  # 100Hz column
-        
-        # Create uniform time grid at 100Hz (10ms intervals)
-        t_start, t_end = time_original[0], time_original[-1]
-        duration_ms = t_end-t_start+1
-        num_samples_adnav = int(duration_ms) 
-        time_adnav_tes = np.linspace(t_start, t_end, num_samples_adnav)
-        
-        # Linear interpolation for each column
-        Resampled_ADnav_25to100 = np.zeros((num_samples_adnav, ADnav_short.shape[1]))
-        for col in range(ADnav_short.shape[1]):
-            Resampled_ADnav_25to100[:, col] = np.interp(time_adnav_tes, time_original, ADnav_short[:, col])
+    time_original =ADnav_short[:, 26]  # 100Hz column
+    
+    # Create uniform time grid at 100Hz (10ms intervals)
+    t_start, t_end = time_original[0], time_original[-1]
+    duration_ms = t_end-t_start+1
+    num_samples_adnav = int(duration_ms) 
+    time_adnav_tes = np.linspace(t_start, t_end, num_samples_adnav)
+    
+    # Linear interpolation for each column
+    Resampled_ADnav_25to100 = np.zeros((num_samples_adnav, ADnav_short.shape[1]))
+    for col in range(ADnav_short.shape[1]):
+        Resampled_ADnav_25to100[:, col] = np.interp(time_adnav_tes, time_original, ADnav_short[:, col])
 
-        # ============ Resample Pressures (1000Hz -> 100Hz) ============
-        Pressures_1000hz = datasets['Pressures'][:,11:26]
-        Pressures_100hz =np.zeros((len(Pressures_1000hz)//10, 15))
-        for i in range(len(Pressures_1000hz)//10):
-            Pressures_100hz[i, :] =np.mean(Pressures_1000hz[i*10:(i+1)*10,:], axis=0)
-        Pressures_100hz[:, 14]=datasets['Pressures'][:-9:10, 27]  # 100hz column
+    print(f"  [OK] AD_NAVIGATION resampling: {time.time() - checkpoint_start:.2f}s")
+    
+    print("[3/6] Processing Pressures resampling (1000Hz to 100Hz)...")
+    checkpoint_start = checkpoint("Pressures resampling", checkpoints)
         
-        time_original_p=Pressures_100hz[:, 14]
+    # ============ Resample Pressures (1000Hz -> 100Hz) ============
+    Pressures_1000hz = datasets['Pressures'][:,11:26]
+    Pressures_100hz =np.zeros((len(Pressures_1000hz)//10, 15))
+    for i in range(len(Pressures_1000hz)//10):
+        Pressures_100hz[i, :] =np.mean(Pressures_1000hz[i*10:(i+1)*10,:], axis=0)
+    Pressures_100hz[:, 14]=datasets['Pressures'][:-9:10, 27]  # 100hz column
+    
+    time_original_p=Pressures_100hz[:, 14]
+    
+    # Create uniform time grid
+    t_start_p, t_end_p=time_original_p[0], time_original_p[-1]
+    duration_ms_p=t_end_p-t_start_p+1
+    num_samples_p=int(duration_ms_p) 
+    time_p = np.linspace(t_start_p, t_end_p, num_samples_p)
+    
+    # Linear interpolation for each column
+    Resampled_Pressures=np.zeros((num_samples_p, Pressures_100hz.shape[1]))
+    for col in range(Pressures_100hz.shape[1]):
+        Resampled_Pressures[:, col]=np.interp(time_p, time_original_p, Pressures_100hz[:, col])
+
+    print(f"  [OK] Pressures resampling: {time.time() - checkpoint_start:.2f}s")
+    
+    print("[4/6] Processing Temperature data with outlier detection...")
+    checkpoint_start = checkpoint("Temperature processing", checkpoints)
         
-        # Create uniform time grid
-        t_start_p, t_end_p=time_original_p[0], time_original_p[-1]
-        duration_ms_p=t_end_p-t_start_p+1
-        num_samples_p=int(duration_ms_p) 
-        time_p = np.linspace(t_start_p, t_end_p, num_samples_p)
+    # ============ Resample Temparature Data ============
+    # Resample TH
+    TH_100hz=np.zeros((len(datasets['TH']), 3))
+    for i in range(len(datasets['TH'])):
+        TH_100hz[i, 0]=datasets['TH'][i, 5] 
+        TH_100hz[i, 1]=datasets['TH'][i, 6] 
+        TH_100hz[i, -1]=datasets['TH'][i, -1] 
+    
+    # Detect and fill outliers before resampling
+    TH_100hz_clean, TH_outlier_mask = detect_and_fill_outliers(
+        TH_100hz, 
+        column_idx=[0, 1], 
+        iqr_multiplier=1.0  # Adjust this: lower = more aggressive outlier detection
+    )
+
+    num_samples_TH=int(TH_100hz_clean[-1, -1]-TH_100hz_clean[0, -1])+1
+    time_TH=np.linspace(TH_100hz_clean[0, -1], TH_100hz_clean[-1, -1], num_samples_TH)
+    time_original_TH=TH_100hz_clean[:, -1]
+    Resampled_TH=np.zeros((num_samples_TH, TH_100hz_clean.shape[1]))
+    for col in range(TH_100hz_clean.shape[1]):
+        Resampled_TH[:, col] = np.interp(time_TH, time_original_TH, TH_100hz_clean[:, col])
+
+    # Resample T2
+    T2_100hz=np.zeros((len(datasets['T2']), 2))
+    for i in range(len(datasets['T2'])):
+        T2_100hz[i, 0]=datasets['T2'][i, 2]  
+        T2_100hz[i, -1]=datasets['T2'][i, -1] 
+    
+    # Detect and fill outliers before resampling
+    T2_100hz_clean, T2_outlier_mask = detect_and_fill_outliers(
+        T2_100hz, 
+        column_idx=[0], 
+        iqr_multiplier=1  # Adjust this: lower = more aggressive outlier detection
+    )
+    
+    num_samples_T2=int(T2_100hz_clean[-1, -1]-T2_100hz_clean[0, -1])+1
+    time_T2=np.linspace(T2_100hz_clean[0, -1], T2_100hz_clean[-1, -1], num_samples_T2)
+    time_original_T2=T2_100hz_clean[:, -1]
+    # Resample with interpolation
+    Resampled_T2=np.zeros((num_samples_T2, T2_100hz_clean.shape[1]))
+    for col in range(T2_100hz_clean.shape[1]):
+        Resampled_T2[:, col] = np.interp(time_T2, time_original_T2, T2_100hz_clean[:, col])
+    
+    print(f"  [OK] Temperature processing: {time.time() - checkpoint_start:.2f}s")
         
-        # Linear interpolation for each column
-        Resampled_Pressures=np.zeros((num_samples_p, Pressures_100hz.shape[1]))
-        for col in range(Pressures_100hz.shape[1]):
-            Resampled_Pressures[:, col]=np.interp(time_p, time_original_p, Pressures_100hz[:, col])
-
-        # ============ Resample Temparature Data ============
-        # Resample TH
-        TH_100hz=np.zeros((len(datasets['TH']), 3))
-        for i in range(len(datasets['TH'])):
-            TH_100hz[i, 0]=datasets['TH'][i, 5] 
-            TH_100hz[i, 1]=datasets['TH'][i, 6] 
-            TH_100hz[i, -1]=datasets['TH'][i, -1] 
+    print("[5/6] Saving resampled data to HDF5 file...")
+    checkpoint_start = checkpoint("HDF5 save", checkpoints)
         
-        # Detect and fill outliers before resampling
-        TH_100hz_clean, TH_outlier_mask = detect_and_fill_outliers(
-            TH_100hz, 
-            column_idx=[0, 1], 
-            iqr_multiplier=1.0  # Adjust this: lower = more aggressive outlier detection
-        )
+    # ============ Save to HDF5 ============
+    output_path = os.path.join(output_dir, output_filename)
+    with h5py.File(output_path, 'w') as h5f_out:
+        # Save ADnav
+        h5f_out.create_dataset('Resampled_ADnav_25hzto100', data=Resampled_ADnav_25to100, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Resampled_ADnav_25hzto100_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
+        # also save the ADnav_short for reference
+        h5f_out.create_dataset('ADnav_short', data=ADnav_short, compression="gzip", compression_opts=4)
+        h5f_out.attrs['ADnav_short_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
 
-        num_samples_TH=int(TH_100hz_clean[-1, -1]-TH_100hz_clean[0, -1])+1
-        time_TH=np.linspace(TH_100hz_clean[0, -1], TH_100hz_clean[-1, -1], num_samples_TH)
-        time_original_TH=TH_100hz_clean[:, -1]
-        Resampled_TH=np.zeros((num_samples_TH, TH_100hz_clean.shape[1]))
-        for col in range(TH_100hz_clean.shape[1]):
-            Resampled_TH[:, col] = np.interp(time_TH, time_original_TH, TH_100hz_clean[:, col])
+        # Save Pressures
+        Resampled_Pressures_label = ['Baro1 HCEM STAT', 'Baro2 HCEM STAT', 'Pressure1HCE2 Sonde 5T', 'Pressure2HCE3 Sonde 5T', 'Pressure3HCE4 Pitot', 'Pressure4HCE5 Pitot', 'Pressure5HCE10 HAUT-BAS', 'Pressure6HCE10 HAUT-BAS', 'Pressure7HCE10 GAUCHE-DROITE', 'Pressure8HCE10 GAUCHE-DROITE', 'LDE1 HAUT-BAS BRUT', 'LDE2 GAUCHE-DROITE BRUT', 'LDE1 HAUT-BAS', 'LDE2 GAUCHE-DROITE', '100Hz Time']
+        h5f_out.create_dataset('Resampled_Pressures', data=Resampled_Pressures, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Resampled_Pressures_label'] = np.array(Resampled_Pressures_label, dtype='S')
+        # also save the original Pressures_100hz for reference
+        h5f_out.create_dataset('Pressures_100hz', data=Pressures_100hz, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Pressures_100hz_label'] = np.array(Resampled_Pressures_label, dtype='S')
 
-        # Resample T2
-        T2_100hz=np.zeros((len(datasets['T2']), 2))
-        for i in range(len(datasets['T2'])):
-            T2_100hz[i, 0]=datasets['T2'][i, 2]  
-            T2_100hz[i, -1]=datasets['T2'][i, -1] 
-        
-        # Detect and fill outliers before resampling
-        T2_100hz_clean, T2_outlier_mask = detect_and_fill_outliers(
-            T2_100hz, 
-            column_idx=[0], 
-            iqr_multiplier=1  # Adjust this: lower = more aggressive outlier detection
-        )
-        
-        num_samples_T2=int(T2_100hz_clean[-1, -1]-T2_100hz_clean[0, -1])+1
-        time_T2=np.linspace(T2_100hz_clean[0, -1], T2_100hz_clean[-1, -1], num_samples_T2)
-        time_original_T2=T2_100hz_clean[:, -1]
-        # Resample with interpolation
-        Resampled_T2=np.zeros((num_samples_T2, T2_100hz_clean.shape[1]))
-        for col in range(T2_100hz_clean.shape[1]):
-            Resampled_T2[:, col] = np.interp(time_T2, time_original_T2, T2_100hz_clean[:, col])
-        
-        # ============ Save to HDF5 ============
-        output_path = os.path.join(output_dir, output_filename)
-        with h5py.File(output_path, 'w') as h5f_out:
-            # Save ADnav
-            h5f_out.create_dataset('Resampled_ADnav_25hzto100', data=Resampled_ADnav_25to100, compression="gzip", compression_opts=4)
-            h5f_out.attrs['Resampled_ADnav_25hzto100_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
-            # also save the ADnav_short for reference
-            h5f_out.create_dataset('ADnav_short', data=ADnav_short, compression="gzip", compression_opts=4)
-            h5f_out.attrs['ADnav_short_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
+        #Save TH data
+        Resampled_TH_label = ['Temp1', 'Hum1', 'Time']
+        h5f_out.create_dataset('Resampled_TH', data=Resampled_TH, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Resampled_TH_label'] = np.array(Resampled_TH_label, dtype='S')
+        # Save T2 data
+        Resampled_T2_label = ['Temp2', 'Time']
+        h5f_out.create_dataset('Resampled_T2', data=Resampled_T2, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Resampled_T2_label'] = np.array(Resampled_T2_label, dtype='S')
+    
+    print(f"  [OK] HDF5 save: {time.time() - checkpoint_start:.2f}s")
+    
+    total_time = time.time() - start_time
+    print(f"\n{'='*50}")
+    print(f"Processing completed successfully!")
+    print(f"Output file: {output_path}")
+    print(f"Total processing time: {total_time:.2f}s")
+    print(f"{'='*50}\n")
 
-            # Save Pressures
-            Resampled_Pressures_label = ['Baro1 HCEM STAT', 'Baro2 HCEM STAT', 'Pressure1HCE2 Sonde 5T', 'Pressure2HCE3 Sonde 5T', 'Pressure3HCE4 Pitot', 'Pressure4HCE5 Pitot', 'Pressure5HCE10 HAUT-BAS', 'Pressure6HCE10 HAUT-BAS', 'Pressure7HCE10 GAUCHE-DROITE', 'Pressure8HCE10 GAUCHE-DROITE', 'LDE1 HAUT-BAS BRUT', 'LDE2 GAUCHE-DROITE BRUT', 'LDE1 HAUT-BAS', 'LDE2 GAUCHE-DROITE', '100Hz Time']
-            h5f_out.create_dataset('Resampled_Pressures', data=Resampled_Pressures, compression="gzip", compression_opts=4)
-            h5f_out.attrs['Resampled_Pressures_label'] = np.array(Resampled_Pressures_label, dtype='S')
-            # also save the original Pressures_100hz for reference
-            h5f_out.create_dataset('Pressures_100hz', data=Pressures_100hz, compression="gzip", compression_opts=4)
-            h5f_out.attrs['Pressures_100hz_label'] = np.array(Resampled_Pressures_label, dtype='S')
+    return output_path
 
-            #Save TH data
-            Resampled_TH_label = ['Temp1', 'Hum1', 'Time']
-            h5f_out.create_dataset('Resampled_TH', data=Resampled_TH, compression="gzip", compression_opts=4)
-            h5f_out.attrs['Resampled_TH_label'] = np.array(Resampled_TH_label, dtype='S')
-            # Save T2 data
-            Resampled_T2_label = ['Temp2', 'Time']
-            h5f_out.create_dataset('Resampled_T2', data=Resampled_T2, compression="gzip", compression_opts=4)
-            h5f_out.attrs['Resampled_T2_label'] = np.array(Resampled_T2_label, dtype='S')
+# test = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Anto Projet\\Project Results\\MomentaVol4_extracted.h5", offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir="Project Results")
 
-        return output_path
-
+"""
 if __name__ == '__main__':
-    output_path = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir="Project Results")
+    output_path = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Anto Projet\\Project Results\\MomentaVol5_clean_extracted.h5", offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir="Project Results")
 
     # Load the resampled data from the saved file
     with h5py.File(output_path, 'r') as h5f_resampled:
@@ -228,7 +284,7 @@ if __name__ == '__main__':
         Resampled_TH = h5f_resampled['Resampled_TH'][:]
         Resampled_T2 = h5f_resampled['Resampled_T2'][:]
 
-    with h5py.File("C:\\Users\\Antonin\\Desktop\\Project Results\\MomentaVol5_clean_extracted.h5", 'r') as h5f_test:
+    with h5py.File("C:\\Users\\Antonin\\Desktop\\Anto Projet\\Project Results\\MomentaVol5_clean_extracted.h5", 'r') as h5f_test:
         colonne_time=-1
         start_time=h5f_test['AD_NAVIGATION'][0,colonne_time]
         end_time=h5f_test['AD_NAVIGATION'][-1,colonne_time]
@@ -302,3 +358,4 @@ if __name__ == '__main__':
     ax.legend()
 
     plt.show()
+"""

@@ -19,7 +19,7 @@ class FlightDataProcessorGUI:
         
         # Extract function variables
         self.enable_extract = tk.BooleanVar(value=True)
-        self.extract_offset1 = tk.IntVar(value=7)
+        self.extract_offset1 = tk.IntVar(value=1)
         self.extract_offset2 = tk.IntVar(value=0)
         
         # Resample function variables
