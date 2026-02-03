@@ -37,7 +37,11 @@ def load_binary_data(file_path, offset1, offset2):
     start = offset1 * 1024
     end = start + line_count * 1024
     matrix = data[start:end].reshape((line_count, 1024))
+    # remove lines filed with FF (255)
+    matrix = matrix[~np.all(matrix == 255, axis=1)]
+    line_count = matrix.shape[0]
     return matrix, line_count
+
 
 def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resultats_test'):
     """
@@ -199,7 +203,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
         return signed
 
     def dec2double(*cols):
-        """Vectorized conversion from 8 uint8 to float64 - OPTIMIZED with numpy view"""
+        """Vectorized conversion from 8 uint8 to float64"""
         if len(cols) != 8:
             raise ValueError("Exactly 8 columns are required to form a double")
         sorted_cols = sorted(cols)
@@ -207,7 +211,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
         return np.frombuffer(byte_array.tobytes(), dtype=np.float64)
 
     def dec2single(*cols):
-        """Vectorized conversion from 4 uint8 to float32 - ULTRA-OPTIMIZED with direct indexing"""
+        """Vectorized conversion from 4 uint8 to float32"""
         if len(cols) != 4:
             raise ValueError("Exactly 4 columns are required to form a single")
         sorted_cols = sorted(cols)
