@@ -73,6 +73,8 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
     
     matrix, line_count = load_binary_data(bin_file_path, offset1, offset2)
     
+    print(f"  [OK] Binary load: {time.time() - checkpoint_start:.2f}s")
+    
     # creation des tables et de celles de 'label'
     AD_NAVIGATION_LABEL = ['Time','SystStatus','FilterStatus','Unixtime','MicroSecondes','Latitude(Rad)',
                         'Longitude(Rad)','Height','VitesseNord','VitesseEast','VitesseDown',

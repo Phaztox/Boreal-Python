@@ -5,7 +5,6 @@ import subprocess
 import os
 import time
 import sys
-import io
 import re
 from extract_data import extract_flight_data
 from resample_and_clean import resample_and_clean_data
@@ -39,12 +38,11 @@ class FlightDataProcessorGUI:
         
         # Progress tracking
         self.start_time = None
-        self.current_step = 0
-        self.total_steps = 0
         self.dashboard_process = None
         
         # Checkpoint tracking
         self.extract_checkpoints = [
+            "Loading and parsing input data",
             "Processing AD_NAVIGATION, IMU, and counters",
             "Processing Air Data, Wind, and Pressures", 
             "Processing Pattern and Temperature/Humidity",
@@ -59,29 +57,19 @@ class FlightDataProcessorGUI:
             "Saving resampled data to HDF5 file"
         ]
         
-        # Expected times (in seconds) based on reference log (removed first checkpoint that has no timing)
-        # Extract: [1.81s, 2.47s, 2.64s, 15.36s, 40.61s] = ~62.89s
-        self.extract_expected_times = [1.8, 2.5, 2.6, 15.4, 40.6]  
-        # Resample: [9.43s, 0.88s, 6.04s, 1.05s, 10.13s] = ~27.53s
+        # Expected times for ETA calculation - 6 extract steps + 5 resample steps
+        self.extract_expected_times = [0.5, 1.8, 2.5, 2.6, 15.4, 40.6]
         self.resample_expected_times = [9.4, 0.9, 6.0, 1.1, 10.1]
         
-        # Continuous ETA tracking
+        # Simplified ETA tracking
         self.eta_timer = None
-        self.last_eta_update = None
         self.current_eta = 0
-        self.eta_update_interval = 1000  # Update every 1000ms (1 second)
-        self.checkpoint_weights = []  # Weight of each checkpoint in total time
-        self._parsing_checkpoint = False  # Prevent recursion in checkpoint parsing
-        self._updating_eta = False  # Prevent recursion in ETA updates  
-        self._timer_stopped = False  # Flag to control timer stopping
+        self._timer_stopped = False
         
         # Tracking variables
         self.current_checkpoints = []
         self.checkpoint_start_times = []
-        self.checkpoint_actual_times = []
-        self.performance_ratios = []  # Actual time / Expected time
-        self.total_expected_time = 0
-        self.current_function = None
+        self.performance_ratios = []
         
         self.setup_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -234,8 +222,7 @@ class FlightDataProcessorGUI:
             self.resample_input_button.grid_remove()
     
     def log_message(self, message):
-        print(message)
-        self.root.update_idletasks()    
+        print(message)    
     def setup_checkpoint_tracking(self):
         """Setup checkpoint tracking based on enabled functions"""
         self.current_checkpoints = []
@@ -249,276 +236,157 @@ class FlightDataProcessorGUI:
             self.current_checkpoints.extend([("resample", i, desc) for i, desc in enumerate(self.resample_checkpoints)])
             expected_times.extend(self.resample_expected_times)
         
-        self.total_expected_time = sum(expected_times)
+        self.current_eta = sum(expected_times)
         self.checkpoint_start_times = []
-        self.checkpoint_actual_times = []
         self.performance_ratios = []
-        
-        # Calculate weights for each checkpoint (percentage of total time)
-        self.checkpoint_weights = [t / self.total_expected_time for t in expected_times]
-        
-        # Initialize ETA
-        self.current_eta = self.total_expected_time
-        self.last_eta_update = time.time()
-        
-        # Start ETA timer
         self.start_eta_timer()
-        
-        # Debug: Show checkpoint setup
-        self.log_message(f"[DEBUG] Setup {len(self.current_checkpoints)} checkpoints:")
-        for i, (func_type, func_step, desc) in enumerate(self.current_checkpoints):
-            expected_time = expected_times[i] if i < len(expected_times) else 0
-            self.log_message(f"[DEBUG] {i}: {func_type}[{func_step}] - {desc} (expected: {expected_time}s)")
     
     def start_eta_timer(self):
-        """Start the continuous ETA update timer"""
+        """Start the ETA update timer"""
         self._timer_stopped = False
         if self.eta_timer:
             self.root.after_cancel(self.eta_timer)
-        # Schedule the first update instead of calling directly to prevent recursion
-        self.eta_timer = self.root.after(self.eta_update_interval, self.update_eta_continuously)
+        self.eta_timer = self.root.after(1000, self.update_eta_continuously)
     
     def stop_eta_timer(self):
-        """Stop the continuous ETA update timer"""
+        """Stop the ETA update timer"""
         self._timer_stopped = True
         if self.eta_timer:
             self.root.after_cancel(self.eta_timer)
             self.eta_timer = None
     
     def update_eta_continuously(self):
-        """Update ETA every second, independent of checkpoints"""
-        try:
-            # Prevent multiple simultaneous updates
-            if getattr(self, '_updating_eta', False):
-                return
+        """Update ETA and progress every second"""
+        if self._timer_stopped or not self.start_time:
+            return
             
-            self._updating_eta = True
-            
-            if self.start_time and self.current_eta > 0:
-                current_time = time.time()
-                
-                # Decrease ETA by elapsed time since last update
-                if self.last_eta_update:
-                    time_passed = current_time - self.last_eta_update
-                    self.current_eta = max(0, self.current_eta - time_passed)
-                
-                self.last_eta_update = current_time
-                
-                # Update the status label if we're not in the middle of a checkpoint update
-                if hasattr(self, 'checkpoint_actual_times'):
-                    completed_checkpoints = len(self.checkpoint_actual_times)
-                    total_checkpoints = len(self.current_checkpoints)
-                    
-                    if completed_checkpoints < total_checkpoints:
-                        # Calculate progress percentage
-                        elapsed_total = sum(self.checkpoint_actual_times)
-                        total_estimated = elapsed_total + self.current_eta
-                        progress_percent = (elapsed_total / total_estimated) * 100 if total_estimated > 0 else 0
-                        
-                        # Ensure minimum progress based on completed checkpoints
-                        min_progress = (completed_checkpoints / total_checkpoints) * 100
-                        progress_percent = max(progress_percent, min_progress)
-                        
-                        self.progress['value'] = min(progress_percent, 100)
-                        
-                        # Update status with live ETA
-                        if completed_checkpoints < len(self.current_checkpoints):
-                            if completed_checkpoints < len(self.checkpoint_start_times):
-                                # Currently processing a checkpoint
-                                current_checkpoint_desc = self.current_checkpoints[completed_checkpoints][2]
-                                status = f"{current_checkpoint_desc}... ({completed_checkpoints + 1}/{total_checkpoints})"
-                            else:
-                                # Between checkpoints or waiting for next
-                                status = f"Processing... ({completed_checkpoints}/{total_checkpoints})"
-                            
-                            if self.current_eta > 0:
-                                status += f" (ETA: {int(self.current_eta)}s)"
-                            
-                            self.status_label.config(text=status)
-                
-                # Schedule next update if ETA is still positive
-                if self.current_eta > 0 and not getattr(self, '_timer_stopped', False):
-                    self.eta_timer = self.root.after(self.eta_update_interval, self.update_eta_continuously)
-                
-        except Exception as e:
-            # Silently handle any errors in ETA updates to not disrupt processing
-            pass
-        finally:
-            self._updating_eta = False
+        if self.current_eta > 0:
+            self.current_eta = max(0, self.current_eta - 1)
+        
+        # Calculate smooth progress based on elapsed time vs total estimated time
+        total_elapsed = time.time() - self.start_time
+        
+        # Calculate total estimated time based on ONLY enabled functions
+        total_estimated = 0
+        if self.enable_extract.get():
+            total_estimated += sum(self.extract_expected_times)
+        if self.enable_resample.get():
+            total_estimated += sum(self.resample_expected_times)
+        
+        # Adjust total estimated time based on performance if we have data
+        if self.performance_ratios:
+            avg_ratio = sum(self.performance_ratios) / len(self.performance_ratios)
+            total_estimated *= avg_ratio
+        
+        # Calculate progress percentage based on time
+        if total_estimated > 0:
+            time_progress = min((total_elapsed / total_estimated) * 100, 99)
+            # Ensure progress never goes backwards
+            current_progress = self.progress['value']
+            smooth_progress = max(time_progress, current_progress)
+            self.progress['value'] = smooth_progress
+        
+        # Only update status from ETA timer if no recent checkpoint activity
+        # This prevents conflicts with checkpoint-specific status updates
+        started_checkpoints = len(self.checkpoint_start_times)
+        completed_checkpoints = len(self.performance_ratios)
+        total_checkpoints = len(self.current_checkpoints)
+        
+        # Only update if we're not currently processing a checkpoint
+        current_time = time.time()
+        recent_checkpoint_activity = False
+        if self.checkpoint_start_times:
+            time_since_last_checkpoint = current_time - self.checkpoint_start_times[-1]
+            recent_checkpoint_activity = time_since_last_checkpoint < 2  # Within 2 seconds
+        
+        # Update status only if no recent checkpoint activity
+        if not recent_checkpoint_activity and total_checkpoints > 0:
+            if completed_checkpoints < total_checkpoints:
+                next_checkpoint = self.current_checkpoints[completed_checkpoints][2]
+                eta_str = f"{self.current_eta / 60:.1f} min" if self.current_eta > 60 else f"{self.current_eta:.0f} sec"
+                status_text = f"Waiting [{completed_checkpoints + 1}/{total_checkpoints}] {next_checkpoint}... (ETA: {eta_str})"
+                self.status_label.config(text=status_text)
+        
+        if not self._timer_stopped:
+            self.eta_timer = self.root.after(1000, self.update_eta_continuously)
     
     def recalibrate_eta(self, completed_checkpoint_index):
-        """Recalibrate ETA based on completed checkpoint performance"""
+        """Recalibrate ETA based on performance"""
         if not self.performance_ratios:
             return
         
-        # Calculate average performance ratio
-        avg_ratio = sum(self.performance_ratios) / len(self.performance_ratios)
+        # Calculate average performance ratio from completed checkpoints
+        valid_ratios = [r for r in self.performance_ratios if r is not None]
+        if not valid_ratios:
+            return
         
-        # Calculate remaining expected time
-        remaining_expected_time = 0
+        # Use a weighted average that gives more weight to recent performance
+        if len(valid_ratios) == 1:
+            avg_ratio = valid_ratios[0]
+        else:
+            # Weight recent ratios more heavily
+            weights = [i + 1 for i in range(len(valid_ratios))]
+            weighted_sum = sum(ratio * weight for ratio, weight in zip(valid_ratios, weights))
+            weight_total = sum(weights)
+            avg_ratio = weighted_sum / weight_total
+        
+        # Calculate remaining expected time based on actual performance
+        remaining_time = 0
         for i in range(completed_checkpoint_index + 1, len(self.current_checkpoints)):
             func_type, func_step, _ = self.current_checkpoints[i]
-            if func_type == "extract":
-                expected_time = self.extract_expected_times[func_step]
-            else:
-                expected_time = self.resample_expected_times[func_step]
-            remaining_expected_time += expected_time * avg_ratio
+            expected_time = self.extract_expected_times[func_step] if func_type == "extract" else self.resample_expected_times[func_step]
+            remaining_time += expected_time * avg_ratio
         
-        # Smooth the ETA adjustment to avoid sudden jumps
+        # Smooth the ETA change to prevent sudden jumps
+        new_eta = max(0, remaining_time)
         if self.current_eta > 0:
-            # Blend the new estimate with the current ETA (70% new, 30% current)
-            self.current_eta = 0.7 * remaining_expected_time + 0.3 * self.current_eta
+            # Blend old and new ETA to smooth transitions (70% new, 30% old)
+            self.current_eta = 0.7 * new_eta + 0.3 * self.current_eta
         else:
-            self.current_eta = remaining_expected_time
-        
-        self.last_eta_update = time.time()
+            self.current_eta = new_eta
     
     def parse_checkpoint_output(self, output_line):
         """Parse output line to detect checkpoint progress"""
         line = output_line.strip()
         
-        # Debug logging
-        if '[' in line and ']' in line:
-            self.log_message(f"[DEBUG] Parsing line: {line}")
-        
-        # Check for checkpoint start patterns
-        start_pattern = r'\[(\d+)/(\d+)\]\s*(.+?)\.\.\.$'
-        
-        # Check for completion patterns - match various formats
-        completion_patterns = [
-            r'\[OK\]\s*(.+?):\s*([\d\.]+)s',
-            r'\[\*\]\s*(.+?)\.\.\.$',  # Sometimes there's just [*] pattern
-            r'\[OK\]\s*(.+?)\s*\([^)]*\):\s*([\d\.]+)s'  # With parentheses info
-        ]
-        
-        # Check for checkpoint start
-        start_match = re.search(start_pattern, line)
+        # Check for checkpoint start pattern - accept any [X/Y] format
+        start_match = re.search(r'\[(\d+)/(\d+)\]\s*(.+?)\.\.\.\s*$', line)
         if start_match:
             step_num = int(start_match.group(1))
             total_steps = int(start_match.group(2))
             checkpoint_desc = start_match.group(3).strip()
             
-            self.log_message(f"[DEBUG] Found checkpoint start: {checkpoint_desc}")
+            # Record the start time for this checkpoint
+            self.checkpoint_start_times.append(time.time())
             
-            # Find which checkpoint this corresponds to using fuzzy matching
-            checkpoint_index = self.find_checkpoint_match(checkpoint_desc)
-            
-            if checkpoint_index is not None:
-                self.log_message(f"[DEBUG] Matched to index {checkpoint_index}: {self.current_checkpoints[checkpoint_index][2]}")
-                self.checkpoint_start_times.append(time.time())
-                self.update_checkpoint_progress(checkpoint_index, checkpoint_desc, started=True)
-            else:
-                self.log_message(f"[DEBUG] No match found for: {checkpoint_desc}")
+            # Update status with our own checkpoint tracking
+            current_checkpoint_index = len(self.checkpoint_start_times) - 1
+            if current_checkpoint_index < len(self.current_checkpoints):
+                our_checkpoint_desc = self.current_checkpoints[current_checkpoint_index][2]
+                eta_str = f"{self.current_eta / 60:.1f} min" if self.current_eta > 60 else f"{self.current_eta:.0f} sec"
+                status_text = f"[{current_checkpoint_index + 1}/{len(self.current_checkpoints)}] {our_checkpoint_desc}... (ETA: {eta_str})"
+                self.status_label.config(text=status_text)
         
-        # Check for completion patterns
-        for pattern in completion_patterns:
-            completion_match = re.search(pattern, line)
-            if completion_match:
-                if len(completion_match.groups()) >= 2:
-                    # Has timing info
-                    task_desc = completion_match.group(1).strip()
-                    actual_time = float(completion_match.group(2))
-                    
-                    self.log_message(f"[DEBUG] Found completion: {task_desc} in {actual_time}s")
-                    
-                    if self.checkpoint_start_times:
-                        self.checkpoint_actual_times.append(actual_time)
-                        
-                        # Find the most recent started checkpoint
-                        if len(self.checkpoint_actual_times) <= len(self.current_checkpoints):
-                            checkpoint_index = len(self.checkpoint_actual_times) - 1
-                            self.log_message(f"[DEBUG] Marking checkpoint {checkpoint_index} as completed")
-                            self.update_checkpoint_progress(checkpoint_index, None, completed=True, actual_time=actual_time)
-                break
-    
-    def find_checkpoint_match(self, checkpoint_desc):
-        """Find best matching checkpoint using fuzzy string matching"""
-        checkpoint_desc_lower = checkpoint_desc.lower()
-        
-        # Try exact substring matching first
-        for i, (func_type, func_step, desc) in enumerate(self.current_checkpoints):
-            desc_lower = desc.lower()
-            
-            # Check if key words match
-            checkpoint_words = set(checkpoint_desc_lower.split())
-            desc_words = set(desc_lower.split())
-            
-            # Remove common words that might confuse matching
-            common_words = {'processing', 'data', 'and', 'the', 'with', 'to', 'from'}
-            checkpoint_words -= common_words
-            desc_words -= common_words
-            
-            # Calculate word overlap
-            if checkpoint_words and desc_words:
-                overlap = len(checkpoint_words & desc_words) / len(checkpoint_words | desc_words)
-                if overlap > 0.3:  # At least 30% word overlap
-                    return i
-            
-            # Fallback: check if any significant words are contained
-            for word in checkpoint_words:
-                if len(word) > 3 and word in desc_lower:
-                    return i
-        
-        return None
-        """Parse output line to detect checkpoint progress"""
-        line = output_line.strip()
-        
-        # Check for checkpoint start patterns
-        extract_pattern = r'\[(\d+)/(\d+)\]\s*(.+?)\.\.\.$'
-        resample_pattern = r'\[(\d+)/(\d+)\]\s*(.+?)\.\.\.$'
-        
-        # Check for completion patterns
-        completion_pattern = r'\[OK\]\s*(.+?):\s*([\d\.]+)s'
-        
-        match = re.search(extract_pattern, line) or re.search(resample_pattern, line)
-        if match:
-            step_num = int(match.group(1)) - 1  # Convert to 0-indexed
-            checkpoint_desc = match.group(3).strip()
-            
-            # Find which function and checkpoint this corresponds to
-            checkpoint_index = None
-            for i, (func_type, func_step, desc) in enumerate(self.current_checkpoints):
-                if checkpoint_desc.lower() in desc.lower():
-                    checkpoint_index = i
-                    break
-            
-            if checkpoint_index is not None:
-                self.checkpoint_start_times.append(time.time())
-                self.update_checkpoint_progress(checkpoint_index, checkpoint_desc, started=True)
-        
-        # Check for completion
-        completion_match = re.search(completion_pattern, line)
-        if completion_match and self.checkpoint_start_times:
+        # Check for completion pattern
+        completion_match = re.search(r'\[OK\]\s*(.+?):\s*([\d\.]+)s', line)
+        if completion_match and len(self.checkpoint_start_times) > len(self.performance_ratios):
             actual_time = float(completion_match.group(2))
-            self.checkpoint_actual_times.append(actual_time)
+            checkpoint_index = len(self.performance_ratios)
             
-            # Find the most recent checkpoint
-            if len(self.checkpoint_actual_times) <= len(self.current_checkpoints):
-                checkpoint_index = len(self.checkpoint_actual_times) - 1
-                self.update_checkpoint_progress(checkpoint_index, None, completed=True, actual_time=actual_time)
+            if checkpoint_index < len(self.current_checkpoints):
+                func_type, func_step, _ = self.current_checkpoints[checkpoint_index]
+                expected_time = self.extract_expected_times[func_step] if func_type == "extract" else self.resample_expected_times[func_step]
+                ratio = actual_time / expected_time if expected_time > 0 else 1.0
+                self.performance_ratios.append(ratio)
+                self.recalibrate_eta(checkpoint_index)
+                
+                # Update status when checkpoint completes
+                eta_str = f"{self.current_eta / 60:.1f} min" if self.current_eta > 60 else f"{self.current_eta:.0f} sec"
+                status_text = f"✓ [{checkpoint_index + 1}/{len(self.current_checkpoints)}] {self.current_checkpoints[checkpoint_index][2]} (ETA: {eta_str})"
+                self.status_label.config(text=status_text)
     
-    def update_checkpoint_progress(self, checkpoint_index, checkpoint_desc=None, started=False, completed=False, actual_time=None):
-        """Update progress based on checkpoint completion"""
-        if completed and actual_time is not None:
-            # Calculate performance ratio for this checkpoint
-            func_type, func_step, _ = self.current_checkpoints[checkpoint_index]
-            
-            if func_type == "extract":
-                expected_time = self.extract_expected_times[func_step]
-            else:
-                expected_time = self.resample_expected_times[func_step]
-            
-            ratio = actual_time / expected_time if expected_time > 0 else 1.0
-            self.performance_ratios.append(ratio)
-            
-            # Recalibrate ETA based on new performance data
-            self.recalibrate_eta(checkpoint_index)
-        
-        # The continuous ETA timer will handle the status updates
-        self.root.update_idletasks()
-    
-    def update_progress(self, step_name, current_step=None):
-        """Fallback update progress method for non-checkpoint updates"""
+    def update_progress(self, step_name):
+        """Update progress display"""
         self.status_label.config(text=step_name)
         self.root.update_idletasks()
     
@@ -553,39 +421,25 @@ class FlightDataProcessorGUI:
     
     def capture_function_output(self, func, *args, **kwargs):
         """Capture function output and parse checkpoints"""
-        # Create a custom stdout that captures output
         original_stdout = sys.stdout
-        captured_output = io.StringIO()
-        
-        # Reference to self for the inner class
-        parent_self = self
         
         class TeeOutput:
+            def __init__(self, parent):
+                self.parent = parent
+                
             def write(self, text):
                 original_stdout.write(text)
-                captured_output.write(text)
-                # Parse each line for checkpoints with recursion protection
-                try:
-                    for line in text.split('\n'):
-                        if line.strip() and not getattr(parent_self, '_parsing_checkpoint', False):
-                            parent_self._parsing_checkpoint = True
-                            try:
-                                parent_self.parse_checkpoint_output(line)
-                            finally:
-                                parent_self._parsing_checkpoint = False
-                except Exception:
-                    pass  # Silently ignore parsing errors
+                for line in text.splitlines():
+                    if line.strip():
+                        self.parent.parse_checkpoint_output(line)
             
             def flush(self):
                 original_stdout.flush()
-                captured_output.flush()
         
-        tee = TeeOutput()
-        sys.stdout = tee
+        sys.stdout = TeeOutput(self)
         
         try:
-            result = func(*args, **kwargs)
-            return result
+            return func(*args, **kwargs)
         finally:
             sys.stdout = original_stdout
     
@@ -593,21 +447,15 @@ class FlightDataProcessorGUI:
         try:
             # Initialize progress
             self.start_time = time.time()
-            self.current_step = 0
-            
-            # Setup checkpoint tracking
             self.setup_checkpoint_tracking()
-            
             self.progress['value'] = 0
             
             input_file = self.input_file_var.get()
             output_dir = self.output_dir_var.get()
-            
             extracted_file = None
             
             # Run extract function if enabled
             if self.enable_extract.get():
-                self.current_function = "extract"
                 self.update_progress("Starting flight data extraction...")
                 start_extract = time.time()
                 self.log_message("Starting flight data extraction...")
@@ -625,7 +473,6 @@ class FlightDataProcessorGUI:
             
             # Run resample function if enabled
             if self.enable_resample.get():
-                self.current_function = "resample"
                 self.update_progress("Starting resampling and cleaning...")
                 start_resample = time.time()
                 self.log_message("Starting resampling and cleaning...")
@@ -699,16 +546,15 @@ class FlightDataProcessorGUI:
         """Detect if dashboard is already running"""
         try:
             result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, shell=True, encoding='utf-8', errors='ignore')
-            dashboard_ports = []
+            ports_found = []
             
             for line in result.stdout.split('\n'):
                 for port in ['8501', '8502', '8503']:
-                    if f':{port}' in line and 'LISTENING' in line:
-                        dashboard_ports.append(port)
+                    if f':{port}' in line and 'LISTENING' in line and port not in ports_found:
+                        ports_found.append(port)
             
-            if dashboard_ports:
-                unique_ports = list(set(dashboard_ports))
-                self.log_message(f"[INFO] Detected existing dashboard(s) on port(s): {', '.join(unique_ports)}")
+            if ports_found:
+                self.log_message(f"[INFO] Detected existing dashboard(s) on port(s): {', '.join(ports_found)}")
         except Exception:
             pass
     
@@ -726,29 +572,27 @@ class FlightDataProcessorGUI:
     def kill_streamlit_processes(self):
         """Force kill Streamlit processes using common ports"""
         try:
-            # Kill by port
-            netstat_result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, shell=True, encoding='utf-8', errors='ignore')
-            processes_killed = 0
+            result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, shell=True, encoding='utf-8', errors='ignore')
+            killed = 0
             
-            for line in netstat_result.stdout.split('\n'):
+            for line in result.stdout.split('\n'):
                 for port in ['8501', '8502', '8503']:
                     if f':{port}' in line and 'LISTENING' in line:
                         parts = line.split()
                         if len(parts) > 4 and parts[-1].isdigit():
                             subprocess.run(['taskkill', '/f', '/pid', parts[-1]], capture_output=True, encoding='utf-8', errors='ignore')
-                            processes_killed += 1
+                            killed += 1
             
-            # Kill by process name
+            # Also kill by process name
             subprocess.run(['taskkill', '/f', '/im', 'streamlit.exe'], capture_output=True, encoding='utf-8', errors='ignore')
             
-            if processes_killed > 0:
-                self.log_message(f"[SUCCESS] Killed {processes_killed} dashboard processes")
+            if killed > 0:
+                self.log_message(f"[SUCCESS] Killed {killed} dashboard processes")
             else:
                 self.log_message("[INFO] No dashboard processes found")
                 
         except Exception as e:
             self.log_message(f"[ERROR] Error during process cleanup: {str(e)}")
-
     
     def on_closing(self):
         """Handle GUI closing event"""
