@@ -13,6 +13,10 @@ import plotly.graph_objects as go
 from pathlib import Path
 import os
 import sys
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for image generation
+import io
 from data_utils import (
     list_datasets, 
     get_dataset_info, 
@@ -224,7 +228,7 @@ if h5_files:
                 
                 if numeric_cols:
                     # Plot type selection
-                    plot_type = st.selectbox("Plot type:", ["Line Plot", "Scatter Plot", "Histogram", "Box Plot"], index=1)
+                    plot_type = st.selectbox("Plot type:", ["Line Plot", "Scatter Plot", "Histogram", "Box Plot"], index=0)
                     
                     col1, col2 = st.columns(2)
                     
@@ -236,7 +240,7 @@ if h5_files:
                     
                     with col2:
                         if plot_type in ["Line Plot", "Scatter Plot"]:
-                            y_col = st.selectbox("Y-axis:", [col for col in numeric_cols if col != x_col])
+                            y_col = st.selectbox("Y-axis:", [col for col in numeric_cols if col != x_col], index=0)
                         else:
                             y_col = None
                     
@@ -255,22 +259,27 @@ if h5_files:
                     
                     # Create plot
                     try:
+                        # Get the default plotly color (first color in the sequence)
+                        default_color = '#636EFA'  # Plotly's default blue
+                        
                         if plot_type == "Line Plot":
                             # Sort by index to maintain sequential order (don't sort by x values)
                             df_sample_sorted = df_sample.sort_index()
                             fig = px.line(df_sample_sorted, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
-                            # Make line thinner for large datasets
-                            fig.update_traces(line=dict(width=1))
+                            # Make line thinner and explicitly set color
+                            fig.update_traces(line=dict(width=1, color=default_color))
                         elif plot_type == "Scatter Plot":
                             fig = px.scatter(df_sample, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
-                            # Make markers smaller for large datasets
-                            fig.update_traces(marker=dict(size=3))
+                            # Make markers smaller and explicitly set color
+                            fig.update_traces(marker=dict(size=3, color=default_color))
                         elif plot_type == "Histogram":
                             fig = px.histogram(df_sample, x=x_col, title=f"Distribution of {x_col}")
+                            fig.update_traces(marker=dict(color=default_color))
                         elif plot_type == "Box Plot":
                             fig = px.box(df_sample, y=x_col, title=f"Box Plot of {x_col}")
+                            fig.update_traces(marker=dict(color=default_color))
                         
-                        fig.update_layout(height=600, width=1200)
+                        fig.update_layout(height=600, width=1200, template="plotly")
                         st.plotly_chart(fig, width='stretch')
                         
                         # Generate filename based on plot type and axes
@@ -280,14 +289,94 @@ if h5_files:
                             plot_filename = f"histogram_{x_col}_{sample_size}rows.png"
                         else:  # Box Plot
                             plot_filename = f"boxplot_{x_col}_{sample_size}rows.png"
+
+                        # Checkbox button to chose to either generate the following downloads on the specified number of rows or on the entire dataset
+                        use_full_dataset = st.checkbox(f"Generate downloads for entire dataset (not just {sample_size} rows)", key="full_download_checkbox")
+                        if use_full_dataset:
+                            plot_filename = plot_filename.replace(f"{sample_size}rows", "full_dataset")
                         
-                        # Download button - use scale=2 for high resolution (2x DPI)
-                        st.download_button(
-                            label="Download plot as PNG",
-                            data=fig.to_image(format="png", width=1200, height=600, scale=2),
-                            file_name=plot_filename,
-                            mime="image/png",
-                        )
+                        # Function to create matplotlib figure for high-quality exports
+                        def create_matplotlib_figure(data, plot_type, x_col, y_col=None, dpi=150):
+                            """Create matplotlib figure matching Plotly styling"""
+                            fig_mpl, ax = plt.subplots(figsize=(12, 6), dpi=dpi)
+                            
+                            # Plotly's default blue color
+                            color = '#636EFA'
+                            
+                            if plot_type == "Line Plot":
+                                data_sorted = data.sort_index()
+                                ax.plot(data_sorted[x_col], data_sorted[y_col], color=color, linewidth=1)
+                                ax.set_xlabel(x_col, fontsize=12)
+                                ax.set_ylabel(y_col, fontsize=12)
+                                ax.set_title(f"{y_col} vs {x_col}", fontsize=14, fontweight='bold')
+                            elif plot_type == "Scatter Plot":
+                                ax.scatter(data[x_col], data[y_col], color=color, s=10, alpha=0.6)
+                                ax.set_xlabel(x_col, fontsize=12)
+                                ax.set_ylabel(y_col, fontsize=12)
+                                ax.set_title(f"{y_col} vs {x_col}", fontsize=14, fontweight='bold')
+                            elif plot_type == "Histogram":
+                                ax.hist(data[x_col].dropna(), bins=30, color=color, alpha=0.7, edgecolor='white')
+                                ax.set_xlabel(x_col, fontsize=12)
+                                ax.set_ylabel('Count', fontsize=12)
+                                ax.set_title(f"Distribution of {x_col}", fontsize=14, fontweight='bold')
+                            elif plot_type == "Box Plot":
+                                bp = ax.boxplot(data[x_col].dropna(), patch_artist=True)
+                                for patch in bp['boxes']:
+                                    patch.set_facecolor(color)
+                                    patch.set_alpha(0.7)
+                                ax.set_ylabel(x_col, fontsize=12)
+                                ax.set_title(f"Box Plot of {x_col}", fontsize=14, fontweight='bold')
+                            
+                            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+                            ax.spines['top'].set_visible(False)
+                            ax.spines['right'].set_visible(False)
+                            plt.tight_layout()
+                            return fig_mpl
+                        
+                        # Create cache key for current plot configuration
+                        cache_key = f"{viz_dataset}_{plot_type}_{x_col}_{y_col}_{sample_size}_{use_full_dataset}"
+                        
+                        # Generate and cache image data only when configuration changes
+                        if f"png_{cache_key}" not in st.session_state:
+                            # Select data based on checkbox state
+                            data_for_export = df_viz if use_full_dataset else df_sample
+                            
+                            # Generate matplotlib figure
+                            fig_mpl = create_matplotlib_figure(data_for_export, plot_type, x_col, y_col, dpi=150)
+                            
+                            # Save as PNG
+                            buf_png = io.BytesIO()
+                            fig_mpl.savefig(buf_png, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+                            buf_png.seek(0)
+                            st.session_state[f"png_{cache_key}"] = buf_png.getvalue()
+                            
+                            # Save as SVG
+                            buf_svg = io.BytesIO()
+                            fig_mpl.savefig(buf_svg, format='svg', bbox_inches='tight', facecolor='white')
+                            buf_svg.seek(0)
+                            st.session_state[f"svg_{cache_key}"] = buf_svg.getvalue()
+                            
+                            # Close matplotlib figure to free memory
+                            plt.close(fig_mpl)
+                        
+                        # Download buttons with cached data
+                        col_dl1, col_dl2 = st.columns(2)
+                        with col_dl1:
+                            st.download_button(
+                                label="Download plot as PNG",
+                                data=st.session_state[f"png_{cache_key}"],
+                                file_name=plot_filename,
+                                mime="image/png",
+                                key="download_png"
+                            )
+                        with col_dl2:
+                            st.download_button(
+                                label="Download plot as SVG",
+                                data=st.session_state[f"svg_{cache_key}"],
+                                file_name=plot_filename.replace(".png", ".svg"),
+                                mime="image/svg+xml",
+                                key="download_svg"
+                            )
                     except Exception as e:
                         st.error(f"Error creating plot: {str(e)}")
                 else:
