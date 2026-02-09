@@ -13,7 +13,7 @@ class FlightDataProcessorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Flight Data Processor")
-        self.root.geometry("800x750")
+        self.root.geometry("800x700")
         
         # Variables
         self.input_file_var = tk.StringVar()
@@ -76,9 +76,8 @@ class FlightDataProcessorGUI:
         self.detect_existing_dashboard()
     
     def setup_ui(self):
-        # Main frame with scrollbar
         main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=10)
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=0)
         main_frame.columnconfigure(1, weight=1)
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
@@ -87,7 +86,7 @@ class FlightDataProcessorGUI:
         
         # Title
         title_label = ttk.Label(main_frame, text="Flight Data Processor", font=("Arial", 16, "bold"))
-        title_label.grid(row=row, column=0, columnspan=3, pady=(0, 20))
+        title_label.grid(row=row, column=0, columnspan=3, pady=(0, 10))
         row += 1
         
         # Input file selection
@@ -103,7 +102,7 @@ class FlightDataProcessorGUI:
         row += 1
         
         # Separator
-        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20)
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         row += 1
         
         # Extract function section
@@ -170,7 +169,7 @@ class FlightDataProcessorGUI:
         row += 1
         
         # Separator
-        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20)
+        ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
         row += 1
         
         # Process button
@@ -596,9 +595,14 @@ class FlightDataProcessorGUI:
     
     def on_closing(self):
         """Handle GUI closing event"""
-        if self.dashboard_process and messagebox.askokcancel("Quit", "Dashboard is running. Close dashboard and quit?"):
-            self.shutdown_dashboard()
-        self.root.destroy()
+        if self.dashboard_process:
+            if messagebox.askokcancel("Quit", "Dashboard is running. Close dashboard and quit?"):
+                self.shutdown_dashboard()
+                self.root.destroy()
+                sys.exit(0)
+        else:
+            self.root.destroy()
+            sys.exit(0)
 
 def main():
     root = tk.Tk()
