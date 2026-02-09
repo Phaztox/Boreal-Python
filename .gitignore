@@ -66,6 +66,8 @@ desktop.ini
 # Project specific - Results directories
 Project Results/
 **/Project Results/
+Processed Data/
+**/Processed Data/
 
 # Notebooks
 *.ipynb

@@ -3,7 +3,7 @@ Interactive Dashboard for browsing HDF5 flight data files.
 A modern web-based UI for exploring your data - similar to Excel or MATLAB viewer.
 
 To run:
-    streamlit run dashboard.py
+    streamlit run dashboard.py -- [data_directory]
 """
 
 import streamlit as st
@@ -12,6 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 import os
+import sys
 from data_utils import (
     list_datasets, 
     get_dataset_info, 
@@ -52,8 +53,16 @@ st.markdown("Interactive dashboard for exploring HDF5 flight data files")
 # Sidebar - File selection
 st.sidebar.header("File Selection")
 
+# Get data directory from command line arguments or use default
+if len(sys.argv) > 1:
+    results_dir = sys.argv[1]
+else:
+    results_dir = "Processed Data"  # Default directory for processed data files
+
+# Display current data directory
+st.sidebar.info(f"📁 Data Directory: {results_dir}")
+
 # Find HDF5 files
-results_dir = "Project Results"
 if os.path.exists(results_dir):
     h5_files = [f for f in os.listdir(results_dir) if f.endswith('.h5')]
 else:

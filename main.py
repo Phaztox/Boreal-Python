@@ -13,11 +13,11 @@ class FlightDataProcessorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Flight Data Processor")
-        self.root.geometry("800x700")
+        self.root.geometry("725x725")
         
         # Variables
         self.input_file_var = tk.StringVar()
-        self.output_dir_var = tk.StringVar(value="Project Results")
+        self.output_dir_var = tk.StringVar(value="Processed Data")
         
         # Extract function variables
         self.enable_extract = tk.BooleanVar(value=True)
@@ -100,6 +100,12 @@ class FlightDataProcessorGUI:
         ttk.Entry(main_frame, textvariable=self.output_dir_var, width=50).grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(5, 5))
         ttk.Button(main_frame, text="Browse", command=self.browse_output_dir).grid(row=row, column=2, padx=(5, 0))
         row += 1
+
+        # Line to only launch the dashboard without processing
+        ttk.Label(main_frame, text="Launch Dashboard Only:", font=("Arial", 9, "italic")).grid(row=row, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.output_dir_var, width=50).grid(row=row, column=1, sticky=(tk.W, tk.E), padx=(5, 5)) # Reusing output directory entry for dashboard launch, can be left empty
+        ttk.Button(main_frame, text="Launch Dashboard", command=self.launch_dashboard_app).grid(row=row, column=2, padx=(5, 0))
+        row += 1
         
         # Separator
         ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
@@ -114,9 +120,11 @@ class FlightDataProcessorGUI:
         
         ttk.Label(extract_frame, text="Offset 1:").grid(row=1, column=0, sticky=tk.W, pady=2)
         ttk.Entry(extract_frame, textvariable=self.extract_offset1, width=10).grid(row=1, column=1, sticky=tk.W, padx=(5, 0))
+        ttk.Label(extract_frame, text="(Number of rows to skip from the start of the file. e.g. 0 for no offset, 1 to shift by one row)").grid(row=1, column=2, sticky=tk.W, padx=(5, 0))
         
         ttk.Label(extract_frame, text="Offset 2:").grid(row=2, column=0, sticky=tk.W, pady=2)
         ttk.Entry(extract_frame, textvariable=self.extract_offset2, width=10).grid(row=2, column=1, sticky=tk.W, padx=(5, 0))
+        ttk.Label(extract_frame, text="(Number of rows to skip from the end of the file. e.g. 0 for no offset, 1 to shift by one row)").grid(row=2, column=2, sticky=tk.W, padx=(5, 0))
         
         row += 1
         
@@ -141,15 +149,19 @@ class FlightDataProcessorGUI:
         
         ttk.Label(resample_frame, text="Offset 1:").grid(row=3, column=0, sticky=tk.W, pady=2)
         ttk.Entry(resample_frame, textvariable=self.resample_offset1, width=10).grid(row=3, column=1, sticky=tk.W, padx=(5, 0))
+        ttk.Label(resample_frame, text="(Number of rows to skip from the start of the file.)").grid(row=3, column=2, sticky=tk.W, padx=(5, 0))
         
         ttk.Label(resample_frame, text="Offset 2:").grid(row=4, column=0, sticky=tk.W, pady=2)
         ttk.Entry(resample_frame, textvariable=self.resample_offset2, width=10).grid(row=4, column=1, sticky=tk.W, padx=(5, 0))
+        ttk.Label(resample_frame, text="(Number of rows to skip from the end of the file.)").grid(row=4, column=2, sticky=tk.W, padx=(5, 0))
         
         ttk.Label(resample_frame, text="Offset P1:").grid(row=5, column=0, sticky=tk.W, pady=2)
         ttk.Entry(resample_frame, textvariable=self.resample_offsetP1, width=10).grid(row=5, column=1, sticky=tk.W, padx=(5, 0))
+        ttk.Label(resample_frame, text="(Number of rows to skip from the start of the file for the Pressure data.)").grid(row=5, column=2, sticky=tk.W, padx=(5, 0))
         
         ttk.Label(resample_frame, text="Offset P2:").grid(row=6, column=0, sticky=tk.W, pady=2)
         ttk.Entry(resample_frame, textvariable=self.resample_offsetP2, width=10).grid(row=6, column=1, sticky=tk.W, padx=(5, 0))
+        ttk.Label(resample_frame, text="(Number of rows to skip from the end of the file for the Pressure data.)").grid(row=6, column=2, sticky=tk.W, padx=(5, 0))
         
         # Initialize UI state
         self.update_resample_ui()
@@ -525,17 +537,22 @@ class FlightDataProcessorGUI:
             self.stop_eta_timer()
     
     def launch_dashboard_app(self):
-        """Launch the dashboard using the batch file"""
+        """Launch the dashboard using streamlit with the output directory"""
         try:
             self.log_message("\n[INFO] Launching dashboard...")
-            bat_file_path = os.path.join(os.getcwd(), "launch_dashboard.bat")
+            output_dir = self.output_dir_var.get()
             
-            if os.path.exists(bat_file_path):
-                self.dashboard_process = subprocess.Popen([bat_file_path], shell=True)
-                self.log_message("[SUCCESS] Dashboard launched successfully!")
+            # Launch streamlit directly with the output directory as argument
+            venv_python = os.path.join(os.getcwd(), ".venv", "Scripts", "python.exe")
+            dashboard_script = os.path.join(os.getcwd(), "dashboard.py")
+            
+            if os.path.exists(venv_python) and os.path.exists(dashboard_script):
+                cmd = [venv_python, "-m", "streamlit", "run", dashboard_script, "--", output_dir]
+                self.dashboard_process = subprocess.Popen(cmd, shell=True)
+                self.log_message(f"[SUCCESS] Dashboard launched successfully with data directory: {output_dir}")
             else:
-                self.log_message(f"[ERROR] Dashboard batch file not found: {bat_file_path}")
-                messagebox.showwarning("Warning", f"Dashboard batch file not found: {bat_file_path}")
+                self.log_message(f"[ERROR] Python or dashboard script not found")
+                messagebox.showwarning("Warning", "Could not find Python environment or dashboard script")
                 
         except Exception as e:
             self.log_message(f"[ERROR] Error launching dashboard: {str(e)}")
@@ -548,7 +565,7 @@ class FlightDataProcessorGUI:
             ports_found = []
             
             for line in result.stdout.split('\n'):
-                for port in ['8501', '8502', '8503']:
+                for port in ['8501', '8502', '8503', '8504', '8505']:
                     if f':{port}' in line and 'LISTENING' in line and port not in ports_found:
                         ports_found.append(port)
             
@@ -575,7 +592,7 @@ class FlightDataProcessorGUI:
             killed = 0
             
             for line in result.stdout.split('\n'):
-                for port in ['8501', '8502', '8503']:
+                for port in ['8501', '8502', '8503', '8504', '8505']:
                     if f':{port}' in line and 'LISTENING' in line:
                         parts = line.split()
                         if len(parts) > 4 and parts[-1].isdigit():
