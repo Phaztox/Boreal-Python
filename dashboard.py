@@ -20,10 +20,9 @@ from data_utils import list_datasets, get_dataset_info, get_dataframe
 import h5py
 import streamlit.components.v1 as components
 
-
 st.set_page_config(
     page_title="UAV Data Browser",
-    page_icon="",
+    page_icon="https://images.icon-icons.com/1738/PNG/512/iconfinder-technologymachineelectronicdevice06-4026454_113332.png",
     layout="wide",
     initial_sidebar_state="expanded"
 )
