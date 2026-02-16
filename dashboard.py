@@ -186,6 +186,16 @@ if h5_files:
             with viz_tab1:
                 viz_dataset = st.selectbox("Select dataset:", datasets, key="viz_dataset")
                 
+                # Clear plot cache when dataset changes
+                if 'last_viz_dataset' not in st.session_state:
+                    st.session_state['last_viz_dataset'] = viz_dataset
+                elif st.session_state['last_viz_dataset'] != viz_dataset:
+                    # Dataset changed - clear all plot caches
+                    keys_to_remove = [key for key in st.session_state.keys() if key.startswith('png_') or key.startswith('svg_')]
+                    for key in keys_to_remove:
+                        del st.session_state[key]
+                    st.session_state['last_viz_dataset'] = viz_dataset
+                
                 with st.spinner(f"Loading {viz_dataset}..."):
                     df_viz = get_dataframe(file_path, viz_dataset)
                 
@@ -219,10 +229,11 @@ if h5_files:
                             default_sample = min(10000, max_sample)
                             sample_size = st.slider("Sample size (rows):", 100, max_sample, default_sample)
                         
+                        plot_color = st.color_picker("Plot color:", "#636EFA", key="plot_color_picker")
+                        
                         df_sample = df_viz.sample(n=min(sample_size, len(df_viz)), random_state=42)
                         
                         try:
-                            plot_color = '#636EFA'
                             
                             if plot_type == "Line Plot":
                                 df_sorted = df_sample.sort_index()
@@ -249,9 +260,8 @@ if h5_files:
                             use_full = st.checkbox(f"Use full dataset for download (not just {sample_size} rows)", key="full_download_checkbox")
                             if use_full:
                                 plot_filename = plot_filename.replace(f"{sample_size}rows", "full_dataset")
-                            def create_matplotlib_figure(data, plot_type, x_col, y_col=None, dpi=150):
+                            def create_matplotlib_figure(data, plot_type, x_col, y_col=None, color='#636EFA', dpi=150):
                                 fig_mpl, ax = plt.subplots(figsize=(12, 6), dpi=dpi)
-                                color = '#636EFA'
                                 
                                 if plot_type == "Line Plot":
                                     data_sorted = data.sort_index()
@@ -283,10 +293,10 @@ if h5_files:
                                 plt.tight_layout()
                                 return fig_mpl
                             
-                            cache_key = f"{viz_dataset}_{plot_type}_{x_col}_{y_col}_{sample_size}_{use_full}"
+                            cache_key = f"{viz_dataset}_{plot_type}_{x_col}_{y_col}_{sample_size}_{use_full}_{plot_color}"
                             if f"png_{cache_key}" not in st.session_state:
                                 data_for_export = df_viz if use_full else df_sample
-                                fig_mpl = create_matplotlib_figure(data_for_export, plot_type, x_col, y_col, dpi=150)
+                                fig_mpl = create_matplotlib_figure(data_for_export, plot_type, x_col, y_col, color=plot_color, dpi=150)
                                 
                                 # Save as PNG
                                 buf_png = io.BytesIO()
@@ -300,7 +310,7 @@ if h5_files:
                                 buf_svg.seek(0)
                                 st.session_state[f"svg_{cache_key}"] = buf_svg.getvalue()
                                 plt.close(fig_mpl)
-                            col_dl1, col_dl2 = st.columns(2)
+                            col_dl1, col_dl2, col_dl3 = st.columns([2, 2, 1])
                             with col_dl1:
                                 st.download_button(
                                     label="Download plot as PNG",
@@ -317,6 +327,13 @@ if h5_files:
                                     mime="image/svg+xml",
                                     key="download_svg"
                                 )
+                            with col_dl3:
+                                if st.button("Refresh", key="refresh_plot", help="Clear cache and regenerate plot"):
+                                    if f"png_{cache_key}" in st.session_state:
+                                        del st.session_state[f"png_{cache_key}"]
+                                    if f"svg_{cache_key}" in st.session_state:
+                                        del st.session_state[f"svg_{cache_key}"]
+                                    st.rerun()
                         except Exception as e:
                             st.error(f"Error creating plot: {str(e)}")
                     else:
