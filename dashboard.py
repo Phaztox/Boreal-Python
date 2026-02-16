@@ -68,6 +68,18 @@ if h5_files:
         h5_files,
         index=0
     )
+    
+    # Clear plot cache when H5 file changes
+    if 'last_selected_file' not in st.session_state:
+        st.session_state['last_selected_file'] = selected_file
+    elif st.session_state['last_selected_file'] != selected_file:
+        # File changed - clear all plot caches
+        keys_to_remove = [key for key in st.session_state.keys() if key.startswith('png_') or key.startswith('svg_')]
+        for key in keys_to_remove:
+            del st.session_state[key]
+        st.session_state['last_selected_file'] = selected_file
+        st.session_state['last_viz_dataset'] = None  # Also reset dataset tracking
+    
     file_path = os.path.join(results_dir, selected_file)
     
     file_size = os.path.getsize(file_path) / (1024**2)
@@ -392,9 +404,16 @@ if h5_files:
                         color_var_3d = st.selectbox("Color by:", numeric_cols_color, 
                                                    index=min(2, len(numeric_cols_color)-1) if color_dataset == x_dataset else 0, 
                                                    key="color_param")
+                        colorscale_3d = st.selectbox("Color gradient preset:", 
+                                                     ["Viridis", "Plasma", "Inferno", "Magma", "Cividis", 
+                                                      "Turbo", "Jet", "Rainbow", "Hot", "Cool", 
+                                                      "Blues", "Reds", "Greens", "Greys", "YlOrRd", "RdBu"],
+                                                     index=0,
+                                                     key="colorscale_param")
                     else:
                         color_var_3d = None
                         color_dataset = None
+                        colorscale_3d = None
                 with col2:
                     line_width_3d = st.slider("Line width:", 1, 10, 4, key="line_width_3d")
                 
@@ -429,6 +448,13 @@ if h5_files:
                                 df_color_sampled = df_color_sampled[:min_length]
                             
                             st.info(f"Using {min_length:,} points (sampled from original data)")
+                            
+                            # Create hover template based on whether color gradient is used
+                            if use_color_gradient:
+                                hover_template = f'<b>{x_axis_3d}:</b> %{{x:.4f}}<br><b>{y_axis_3d}:</b> %{{y:.4f}}<br><b>{z_axis_3d}:</b> %{{z:.4f}}<br><b>{color_var_3d}:</b> %{{customdata:.4f}}<extra></extra>'
+                            else:
+                                hover_template = f'<b>{x_axis_3d}:</b> %{{x:.4f}}<br><b>{y_axis_3d}:</b> %{{y:.4f}}<br><b>{z_axis_3d}:</b> %{{z:.4f}}<extra></extra>'
+                            
                             if add_slider:
                                 st.info(f"Generating {num_frames_slider} frames...")
                                 frame_step = max(1, min_length // num_frames_slider)
@@ -445,11 +471,12 @@ if h5_files:
                                             mode='lines',
                                             line=dict(
                                                 color=df_color_sampled[color_var_3d][:end_idx] if use_color_gradient else '#636EFA',
-                                                colorscale='Viridis' if use_color_gradient else None,
+                                                colorscale=colorscale_3d if use_color_gradient else None,
                                                 width=line_width_3d,
                                                 colorbar=dict(title=color_var_3d, thickness=20) if use_color_gradient else None
                                             ),
-                                            hovertemplate=f'<b>{x_axis_3d}:</b> %{{x:.4f}}<br><b>{y_axis_3d}:</b> %{{y:.4f}}<br><b>{z_axis_3d}:</b> %{{z:.4f}}<extra></extra>'
+                                            customdata=df_color_sampled[color_var_3d][:end_idx] if use_color_gradient else None,
+                                            hovertemplate=hover_template
                                         )],
                                         name=str(i),
                                         layout={}
@@ -463,11 +490,12 @@ if h5_files:
                                 mode='lines',
                                 line=dict(
                                     color=df_color_sampled[color_var_3d][:initial_end_idx] if use_color_gradient else '#636EFA',
-                                    colorscale='Viridis' if use_color_gradient else None,
+                                    colorscale=colorscale_3d if use_color_gradient else None,
                                     width=line_width_3d,
                                     colorbar=dict(title=color_var_3d, thickness=20) if use_color_gradient else None
                                 ),
-                                hovertemplate=f'<b>{x_axis_3d}:</b> %{{x:.4f}}<br><b>{y_axis_3d}:</b> %{{y:.4f}}<br><b>{z_axis_3d}:</b> %{{z:.4f}}<extra></extra>'
+                                customdata=df_color_sampled[color_var_3d][:initial_end_idx] if use_color_gradient else None,
+                                hovertemplate=hover_template
                             )])
                             if add_slider:
                                 fig_3d.frames = frames
