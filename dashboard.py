@@ -410,10 +410,12 @@ if h5_files:
                                                       "Blues", "Reds", "Greens", "Greys", "YlOrRd", "RdBu"],
                                                      index=0,
                                                      key="colorscale_param")
+                        solid_color_3d = None
                     else:
                         color_var_3d = None
                         color_dataset = None
                         colorscale_3d = None
+                        solid_color_3d = st.color_picker("Line color:", "#636EFA", key="solid_color_3d_picker")
                 with col2:
                     line_width_3d = st.slider("Line width:", 1, 10, 4, key="line_width_3d")
                 
@@ -470,7 +472,7 @@ if h5_files:
                                             z=df_z_sampled[z_axis_3d][:end_idx],
                                             mode='lines',
                                             line=dict(
-                                                color=df_color_sampled[color_var_3d][:end_idx] if use_color_gradient else '#636EFA',
+                                                color=df_color_sampled[color_var_3d][:end_idx] if use_color_gradient else solid_color_3d,
                                                 colorscale=colorscale_3d if use_color_gradient else None,
                                                 width=line_width_3d,
                                                 colorbar=dict(title=color_var_3d, thickness=20) if use_color_gradient else None
@@ -489,7 +491,7 @@ if h5_files:
                                 z=df_z_sampled[z_axis_3d][:initial_end_idx],
                                 mode='lines',
                                 line=dict(
-                                    color=df_color_sampled[color_var_3d][:initial_end_idx] if use_color_gradient else '#636EFA',
+                                    color=df_color_sampled[color_var_3d][:initial_end_idx] if use_color_gradient else solid_color_3d,
                                     colorscale=colorscale_3d if use_color_gradient else None,
                                     width=line_width_3d,
                                     colorbar=dict(title=color_var_3d, thickness=20) if use_color_gradient else None
