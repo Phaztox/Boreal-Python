@@ -255,7 +255,7 @@ if h5_files:
                                 
                                 if plot_type == "Line Plot":
                                     data_sorted = data.sort_index()
-                                    ax.plot(data_sorted[x_col], data_sorted[y_col], color=color, linewidth=1)
+                                    ax.plot(data_sorted[x_col], data_sorted[y_col], color=color, linewidth=0.5)
                                     ax.set_xlabel(x_col, fontsize=12)
                                     ax.set_ylabel(y_col, fontsize=12)
                                     ax.set_title(f"{y_col} vs {x_col}", fontsize=14, fontweight='bold')
