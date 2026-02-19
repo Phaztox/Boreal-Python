@@ -94,7 +94,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     print(f"Processing: {input_h5_file}")
     print(f"{'='*50}\n")
     
-    print("[1/6] Loading HDF5 file and extracting datasets...")
+    print("[1/9] Loading HDF5 file and extracting datasets...")
     checkpoint_start = checkpoint("HDF5 load", checkpoints)
     
     with h5py.File(input_h5_file, 'r') as h5f:
@@ -113,6 +113,12 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
                 datasets[key]=data[offset1:len(data) - offset2]
             elif key=='T2':
                 datasets[key]=data[offset1:len(data) - offset2]
+            elif key=='IMU':
+                datasets[key]=data[offset1:len(data) - offset2]
+            elif key=='MOTUSORI':
+                datasets[key]=data[offset1:len(data) - offset2]
+            elif key=='MOTUSRAW':
+                datasets[key]=data[offsetP1:len(data) - offsetP2]
             
             # Try to get column names for this specific dataset
             label_key = f'{key}_label' if f'{key}_label' in h5f.attrs else f'{key}_LABEL'
@@ -124,7 +130,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     
     print(f"  [OK] HDF5 load: {time.time() - checkpoint_start:.2f}s")
         
-    print("[2/6] Processing AD_NAVIGATION resampling (25Hz to 100Hz)...")
+    print("[2/9] Processing AD_NAVIGATION resampling (25Hz to 100Hz)...")
     checkpoint_start = checkpoint("AD_NAVIGATION resampling", checkpoints)
         
     # ============ Resample AD_NAVIGATION (25Hz to 100Hz) ============
@@ -156,7 +162,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
     print(f"  [OK] AD_NAVIGATION resampling: {time.time() - checkpoint_start:.2f}s")
     
-    print("[3/6] Processing Pressures resampling (1000Hz to 100Hz)...")
+    print("[3/9] Processing Pressures resampling (1000Hz to 100Hz)...")
     checkpoint_start = checkpoint("Pressures resampling", checkpoints)
         
     # ============ Resample Pressures (1000Hz -> 100Hz) ============
@@ -181,10 +187,10 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
     print(f"  [OK] Pressures resampling: {time.time() - checkpoint_start:.2f}s")
     
-    print("[4/6] Processing Temperature data with outlier detection...")
+    print("[4/9] Processing Temperature data with outlier detection...")
     checkpoint_start = checkpoint("Temperature processing", checkpoints)
         
-    # ============ Resample Temparature Data ============
+    # ============ Resample Temperature Data ============
     # Resample TH
     TH_100hz=np.zeros((len(datasets['TH']), 3))
     for i in range(len(datasets['TH'])):
@@ -229,7 +235,75 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     
     print(f"  [OK] Temperature processing: {time.time() - checkpoint_start:.2f}s")
         
-    print("[5/6] Saving resampled data to HDF5 file...")
+    print("[5/9] Processing IMU data with outlier detection and interpolation...")
+    checkpoint_start = checkpoint("IMU processing", checkpoints)
+
+    # ============ Resample IMU Data ===========
+    IMU_100hz = np.zeros((len(datasets['IMU']), 16))
+    for i in range(16):
+        IMU_100hz[:, i] = datasets['IMU'][:, i]  
+    
+    # Remove duplicate timestamps (keep unique time values)
+    IMU_100hz_unique=np.zeros((len(IMU_100hz), 16))
+    IMU_100hz_unique[0,:]=IMU_100hz[0,:]
+    k=1
+    for i in range(1, len(IMU_100hz)):
+        if IMU_100hz[i, -2] != IMU_100hz[i-1, -2]:  # If timestamp is different from previous
+            IMU_100hz_unique[k,:]=IMU_100hz[i,:]
+            k+=1
+    IMU_100hz_unique=IMU_100hz_unique[:k, :]  # Keep only the filled rows
+
+    num_samples_IMU=int(IMU_100hz_unique[-1, -1]-IMU_100hz_unique[0, -1])+1
+    time_IMU=np.linspace(IMU_100hz_unique[0, -1], IMU_100hz_unique[-1, -1], num_samples_IMU)
+    time_original_IMU=IMU_100hz_unique[:, -1]
+    # Resample with interpolation
+    Resampled_IMU=np.zeros((num_samples_IMU, IMU_100hz_unique.shape[1]))
+    for col in range(IMU_100hz_unique.shape[1]):
+        Resampled_IMU[:, col] = np.interp(time_IMU, time_original_IMU, IMU_100hz_unique[:, col])
+    
+    print(f"  [OK] IMU processing: {time.time() - checkpoint_start:.2f}s")
+
+    print("[6/9] Processing MOTUSORI data with outlier detection and interpolation...")
+    checkpoint_start = checkpoint("MOTUSORI processing", checkpoints)
+
+    # =========== Resample MOTUSORI Data ===========
+    MOTUSORI_100hz = np.zeros((len(datasets['MOTUSORI']), 7))
+    for i in range(7):
+        MOTUSORI_100hz[:, i] = datasets['MOTUSORI'][:, i]
+    # Remove duplicate timestamps (keep unique time values)
+    MOTUSORI_100hz_unique=np.zeros((len(MOTUSORI_100hz), 7))
+    MOTUSORI_100hz_unique[0,:]=MOTUSORI_100hz[0,:]
+    k=1
+    for i in range(1, len(MOTUSORI_100hz)):
+        if MOTUSORI_100hz[i, -1] != MOTUSORI_100hz[i-1, -1]:  # If timestamp is different from previous
+            MOTUSORI_100hz_unique[k,:]=MOTUSORI_100hz[i,:]
+            k+=1
+    MOTUSORI_100hz_unique=MOTUSORI_100hz_unique[:k, :]  # Keep only the filled rows
+
+    # Remove outliers before resampling
+    MOTUSORI_100hz_clean, MOTUSORI_outlier_mask = detect_and_fill_outliers(
+        MOTUSORI_100hz_unique,
+        column_idx=[1,2],  # All columns are numeric
+        iqr_multiplier=2  # Adjust this: lower = more aggressive outlier detection
+    )
+
+    num_samples_MOTUSORI=int(MOTUSORI_100hz_clean[-1, -1]-MOTUSORI_100hz_clean[0, -1])+1
+    time_MOTUSORI=np.linspace(MOTUSORI_100hz_clean[0, -1], MOTUSORI_100hz_clean[-1, -1], num_samples_MOTUSORI)
+    time_original_MOTUSORI=MOTUSORI_100hz_clean[:, -1]
+    # Resample with interpolation
+    Resampled_MOTUSORI=np.zeros((num_samples_MOTUSORI, MOTUSORI_100hz_clean.shape[1]))
+    for col in range(MOTUSORI_100hz_clean.shape[1]):
+        Resampled_MOTUSORI[:, col] = np.interp(time_MOTUSORI, time_original_MOTUSORI, MOTUSORI_100hz_clean[:, col])
+
+    print(f"  [OK] MOTUSORI processing: {time.time() - checkpoint_start:.2f}s")
+
+    print("[7/9] Processing MOTUSRAW data with outlier detection and interpolation...")
+    checkpoint_start = checkpoint("MOTUSRAW processing", checkpoints)
+    # =========== Resample MOTUSRAW Data ===========
+
+    print(f"  [OK] MOTUSRAW processing: {time.time() - checkpoint_start:.2f}s")
+
+    print("[8/9] Saving resampled data to HDF5 file...")
     checkpoint_start = checkpoint("HDF5 save", checkpoints)
         
     # ============ Save to HDF5 ============
@@ -258,6 +332,17 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         Resampled_T2_label = ['Temp2', 'Time']
         h5f_out.create_dataset('Resampled_T2', data=Resampled_T2, compression="gzip", compression_opts=4)
         h5f_out.attrs['Resampled_T2_label'] = np.array(Resampled_T2_label, dtype='S')
+
+        # Save IMU data
+        h5f_out.create_dataset('Resampled_IMU', data=Resampled_IMU, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Resampled_IMU_label'] = np.array(labels['IMU'], dtype='S')
+        # also save the original IMU_100hz for reference
+        h5f_out.create_dataset('IMU_100hz', data=IMU_100hz_unique, compression="gzip", compression_opts=4)
+        h5f_out.attrs['IMU_100hz_label'] = np.array(labels['IMU'], dtype='S')
+
+        # Save MOTUSORI data
+        h5f_out.create_dataset('Resampled_MOTUSORI', data=Resampled_MOTUSORI, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Resampled_MOTUSORI_label'] = np.array(labels['MOTUSORI'], dtype='S')
     
     print(f"  [OK] HDF5 save: {time.time() - checkpoint_start:.2f}s")
     

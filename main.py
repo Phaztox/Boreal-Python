@@ -54,12 +54,15 @@ class FlightDataProcessorGUI:
             "Processing AD_NAVIGATION resampling",
             "Processing Pressures resampling", 
             "Processing Temperature data with outlier detection",
+            "Processing IMU data with outlier detection and interpolation",
+            "Processing MOTUSORI data with outlier detection and interpolation",
+            "Processing MOTUSRAW data with outlier detection and interpolation",
             "Saving resampled data to HDF5 file"
         ]
         
         # Expected times for ETA calculation - 6 extract steps + 5 resample steps
         self.extract_expected_times = [0.5, 1.8, 2.5, 2.6, 15.4, 40.6]
-        self.resample_expected_times = [9.4, 0.9, 6.0, 1.1, 10.1]
+        self.resample_expected_times = [9.4, 0.9, 6.0, 1.1, 1.6, 1.6, 9.9, 10.1]
         
         # Simplified ETA tracking
         self.eta_timer = None
@@ -403,8 +406,8 @@ class FlightDataProcessorGUI:
     
     def process_data(self):
         # Validation
-        if not self.input_file_var.get():
-            messagebox.showerror("Error", "Please select an input file")
+        if self.enable_extract.get() and not self.input_file_var.get():
+            messagebox.showerror("Error", "Please select an input file for extraction")
             return
         
         if not self.output_dir_var.get():
