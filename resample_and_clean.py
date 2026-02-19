@@ -300,6 +300,13 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     print("[7/9] Processing MOTUSRAW data with outlier detection and interpolation...")
     checkpoint_start = checkpoint("MOTUSRAW processing", checkpoints)
     # =========== Resample MOTUSRAW Data ===========
+    """
+    MOTUSRAW_1000hz = np.zeros((len(datasets['MOTUSRAW']), 17))
+    MOTUSRAW_100hz = np.zeros((len(datasets['MOTUSRAW'])//10, 17))
+    # Sampling down from 1000Hz to 100Hz by taking the mean of every 10 samples
+    for i in range(len(datasets['MOTUSRAW'])//10):
+        MOTUSRAW_100hz[i, :] = np.mean(datasets['MOTUSRAW'][i*10:(i+1)*10,:], axis=0)
+    """
 
     print(f"  [OK] MOTUSRAW processing: {time.time() - checkpoint_start:.2f}s")
 
@@ -343,6 +350,10 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         # Save MOTUSORI data
         h5f_out.create_dataset('Resampled_MOTUSORI', data=Resampled_MOTUSORI, compression="gzip", compression_opts=4)
         h5f_out.attrs['Resampled_MOTUSORI_label'] = np.array(labels['MOTUSORI'], dtype='S')
+
+        # Save MOTUSRAW data
+        # h5f_out.create_dataset('Resampled_MOTUSRAW', data=MOTUSRAW_100hz, compression="gzip", compression_opts=4)
+        # h5f_out.attrs['Resampled_MOTUSRAW_label'] = np.array(labels['MOTUSRAW'], dtype='S')
     
     print(f"  [OK] HDF5 save: {time.time() - checkpoint_start:.2f}s")
     
@@ -355,92 +366,3 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
     return output_path
 
-# test = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Anto Projet\\Project Results\\MomentaVol4_extracted.h5", offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir="Project Results")
-
-"""
-if __name__ == '__main__':
-    output_path = resample_and_clean_data("C:\\Users\\Antonin\\Desktop\\Anto Projet\\Project Results\\MomentaVol5_clean_extracted.h5", offset1=0, offset2=0, offsetP1=0, offsetP2=0, output_dir="Project Results")
-
-    # Load the resampled data from the saved file
-    with h5py.File(output_path, 'r') as h5f_resampled:
-        Resampled_ADnav_25to100 = h5f_resampled['Resampled_ADnav_25hzto100'][:]
-        Pressures_100hz = h5f_resampled['Pressures_100hz'][:]
-        Resampled_Pressures = h5f_resampled['Resampled_Pressures'][:]
-        Resampled_TH = h5f_resampled['Resampled_TH'][:]
-        Resampled_T2 = h5f_resampled['Resampled_T2'][:]
-
-    with h5py.File("C:\\Users\\Antonin\\Desktop\\Anto Projet\\Project Results\\MomentaVol5_clean_extracted.h5", 'r') as h5f_test:
-        colonne_time=-1
-        start_time=h5f_test['AD_NAVIGATION'][0,colonne_time]
-        end_time=h5f_test['AD_NAVIGATION'][-1,colonne_time]
-        print(f"La taille est: {len(h5f_test['AD_NAVIGATION'][:,colonne_time])}")
-        print(f"Première valeur de la colonne time: {round(start_time)}"+f"\\nDernière valeur de la colonne time: {round(end_time)}"+f"\\nDifférence: {round((end_time-start_time)/1)}")
-        print(f"Nombre de valeurs manquantes: {round((end_time-start_time)/1)-len(h5f_test['AD_NAVIGATION'][:,colonne_time])}")
-        val_missing=[]
-        ad_nav_times = h5f_test['AD_NAVIGATION'][:, colonne_time]
-        for i in range(len(ad_nav_times) - 1):
-            if ad_nav_times[i+1] - ad_nav_times[i] != 1:
-                val_missing.append(i)
-        print(f"Indices des valeurs manquantes: {val_missing}")
-        print(f"Nombre de valeurs manquantes détectées: {len(val_missing)}")
-
-    # simple plot for Pressure_100hz and Resampled_Pressures on the same plot
-    plt.figure(figsize=(12, 6))
-    plt.plot(Pressures_100hz[:, 2], label='Pressure1 5T', linewidth=0.5, color='blue')
-    plt.plot(Resampled_Pressures[:, 2], label='Resampled Pressure1 5T', linewidth=0.5, color='orange')
-    plt.title('Pressure1 5T - 100hz')
-    plt.xlabel("Time")
-    plt.ylabel("Pressure")
-    plt.legend()
-
-    # simple plot for resampled_ADnav_25to100 roll and Pitch columns
-    plt.figure(figsize=(12, 6))
-    plt.plot(Resampled_ADnav_25to100[:, 15], label='Roll', linewidth=0.5, color='green')
-    plt.plot(Resampled_ADnav_25to100[:, 16], label='Pitch', linewidth=0.5, color='red')
-    plt.title('Resampled ADnav 25Hz to 100Hz - Roll and Pitch Columns')
-    plt.xlabel("Time")
-    plt.ylabel("Value")
-    plt.legend()
-
-    # simple plot for the path of the flight using resampled_ADnav_25to100 Latitude and Longitude columns
-    plt.figure(figsize=(12, 6))
-    plt.plot(Resampled_ADnav_25to100[:, 5], Resampled_ADnav_25to100[:, 6], label='Flight Path', linewidth=0.5, color='purple')
-    plt.title('Flight Path using Latitude and Longitude')
-    plt.xlabel("Longitude")
-    plt.ylabel("Latitude")
-    plt.legend()
-
-    # simple plot for TH and T2 resampled data
-    plt.figure(figsize=(12, 6))
-    plt.plot(Resampled_TH[:, 0], label='Resampled TH Temp1', linewidth=0.5, color='brown')
-    plt.plot(Resampled_T2[:, 0], label='Resampled T2 Temp2', linewidth=0.5, color='orange')
-    plt.title('Resampled TH and T2 Temperature Data')
-    plt.xlabel("Time")
-    plt.ylabel("Temperature")
-    plt.legend()
-
-    # 3D plot for the 'Heading' label off the AD_NAVIGATION database (column 17).
-    # Since it's a heading consisting of angles from 0 to 360 degrees, we can plot it in a cylinder manner, the circle being the angle and the height being time.
-    from mpl_toolkits.mplot3d import Axes3D
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_title('3D Plot of Heading over Time')
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Heading (degrees)')
-    ax.set_zlabel('Radius')
-
-    time_axis = np.arange(Resampled_ADnav_25to100.shape[0])
-    heading_angles = Resampled_ADnav_25to100[:, 17]  # Heading column
-    heading_angles = np.where(heading_angles == 360, 0, heading_angles)  # Replace 360 with 0
-
-    radius = 1  # Fixed radius for the cylinder
-    x = time_axis
-    y = radius * np.cos(np.radians(heading_angles))
-    z = radius * np.sin(np.radians(heading_angles))
-
-    ax.plot(x, y, z, label='Heading', linewidth=0.3)
-    ax.set_box_aspect([3, 1, 1])  # Stretch time axis
-    ax.legend()
-
-    plt.show()
-"""
