@@ -19,6 +19,8 @@ import io
 from data_utils import list_datasets, get_dataset_info, get_dataframe
 import h5py
 import streamlit.components.v1 as components
+import numpy as np
+from scipy.signal import welch, windows
 
 st.set_page_config(
     page_title="UAV Data Browser",
@@ -90,7 +92,7 @@ if h5_files:
         
         st.sidebar.success(f"{len(datasets)} datasets found")
         
-        tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Data Explorer", "Visualization", "Statistics"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "Data Explorer", "Visualization", "Spectrum Analysis", "Statistics"])
         
         # Overview tab
         with tab1:
@@ -580,8 +582,318 @@ if h5_files:
                         if metadata.get('add_slider', False):
                             st.info(f"✓ File includes {metadata.get('num_frames', 0)} animation frames")
         
-        # Statistics tab
+        # Spectrum Analysis tab
         with tab4:
+            st.header("Spectrum Analysis")
+            st.markdown("Analyze the frequency spectrum of your data using different methods.")
+            
+            # Helper function for multitaper method
+            def multitaper_psd(signal, fs, NW=4, k=7):
+                """
+                Multitaper PSD estimation
+                NW: time-bandwidth product (controls frequency resolution vs variance)
+                k: number of tapers (typically 2*NW - 1)
+                """
+                N = len(signal)
+                
+                # Generate DPSS (Slepian) tapers
+                tapers = windows.dpss(N, NW, k, return_ratios=False)
+                
+                # Compute FFT for each taper
+                psds = []
+                for taper in tapers:
+                    tapered_signal = signal * taper
+                    fft_result = np.fft.fft(tapered_signal)
+                    psd = np.abs(fft_result[:N//2])**2 / fs
+                    psds.append(psd)
+                
+                # Average across tapers
+                psd_avg = np.mean(psds, axis=0)
+                freqs = np.fft.fftfreq(N, 1/fs)[:N//2]
+                
+                return freqs, psd_avg
+            
+            # Dataset and column selection
+            col1, col2 = st.columns(2)
+            with col1:
+                spectrum_dataset = st.selectbox("Select dataset:", datasets, key="spectrum_dataset")
+            
+            with col2:
+                df_spectrum = get_dataframe(file_path, spectrum_dataset)
+                numeric_cols_spectrum = df_spectrum.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                if not numeric_cols_spectrum:
+                    st.error("No numeric columns found in selected dataset")
+                else:
+                    spectrum_column = st.selectbox("Select column for analysis:", numeric_cols_spectrum, key="spectrum_column")
+            
+            if numeric_cols_spectrum:
+                st.markdown("---")
+                
+                # Method selection and parameters
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    spectrum_method = st.selectbox(
+                        "Analysis method:",
+                        ["FFT", "Welch", "Multitaper"],
+                        help="FFT: Fast Fourier Transform\nWelch: Averaged periodogram method\nMultitaper: Multiple tapers for variance reduction"
+                    )
+                
+                with col2:
+                    fs = st.number_input("Sampling frequency (Hz):", min_value=1, max_value=10000, value=100, step=1, key="spectrum_fs")
+                
+                with col3:
+                    if spectrum_method == "Welch":
+                        nperseg = st.number_input("Segment length:", min_value=256, max_value=8192, value=2048, step=256, 
+                                                 help="Length of each segment for Welch method")
+                    elif spectrum_method == "Multitaper":
+                        NW = st.number_input("Time-bandwidth product (NW):", min_value=2, max_value=10, value=4, step=1,
+                                           help="Controls frequency resolution vs variance trade-off")
+                
+                st.markdown("---")
+                
+                # Additional options
+                col1, col2 = st.columns(2)
+                with col1:
+                    use_loglog = st.checkbox("Use log-log scale", value=True, key="spectrum_loglog")
+                with col2:
+                    show_grid = st.checkbox("Show grid", value=True, key="spectrum_grid")
+                
+                # Generate spectrum
+                if st.button("Generate Spectrum", type="primary", key="gen_spectrum"):
+                    # Clear spectrum export cache to ensure fresh exports
+                    keys_to_remove = [key for key in st.session_state.keys() if key.startswith('png_spectrum_') or key.startswith('svg_spectrum_')]
+                    for key in keys_to_remove:
+                        del st.session_state[key]
+                    
+                    with st.spinner(f"Computing {spectrum_method} spectrum..."):
+                        try:
+                            signal = df_spectrum[spectrum_column].values
+                            
+                            # Remove NaN values
+                            signal = signal[~np.isnan(signal)]
+                            
+                            if len(signal) == 0:
+                                st.error("Signal contains only NaN values")
+                            else:
+                                # Compute spectrum based on selected method
+                                if spectrum_method == "FFT":
+                                    N = len(signal)
+                                    fft_result = np.fft.fft(signal) / N
+                                    freq = np.fft.fftfreq(N, d=1/fs)
+                                    
+                                    # Single-sided spectrum
+                                    freq_positive = freq[:N//2]
+                                    amplitude = 2 * np.abs(fft_result[:N//2])
+                                    
+                                    ylabel = "Amplitude"
+                                    title_suffix = "(FFT)"
+                                
+                                elif spectrum_method == "Welch":
+                                    f, Pxx = welch(signal, fs=fs, nperseg=nperseg, scaling='density')
+                                    
+                                    # Convert PSD to Amplitude Spectrum
+                                    df_res = f[1] - f[0]
+                                    amplitude = np.sqrt(2 * Pxx * df_res)
+                                    freq_positive = f
+                                    
+                                    ylabel = "Amplitude"
+                                    title_suffix = "(Welch Method)"
+                                
+                                elif spectrum_method == "Multitaper":
+                                    k = 2 * NW - 1
+                                    f, Pxx = multitaper_psd(signal, fs, NW=NW, k=int(k))
+                                    
+                                    # Convert PSD to Amplitude Spectrum
+                                    df_res = f[1] - f[0]
+                                    amplitude = np.sqrt(2 * Pxx * df_res)
+                                    freq_positive = f
+                                    
+                                    ylabel = "Amplitude"
+                                    title_suffix = "(Multitaper Method)"
+                                
+                                # Store in session state
+                                st.session_state['spectrum_data'] = {
+                                    'freq': freq_positive,
+                                    'amplitude': amplitude,
+                                    'method': spectrum_method,
+                                    'column': spectrum_column,
+                                    'dataset': spectrum_dataset,
+                                    'fs': fs,
+                                    'ylabel': ylabel,
+                                    'title_suffix': title_suffix,
+                                    'use_loglog': use_loglog,
+                                    'show_grid': show_grid
+                                }
+                                
+                                st.success(f"✓ Spectrum computed using {spectrum_method} method")
+                        
+                        except Exception as e:
+                            st.error(f"Error computing spectrum: {str(e)}")
+                            st.exception(e)
+                
+                # Display spectrum if computed
+                if 'spectrum_data' in st.session_state:
+                    data = st.session_state['spectrum_data']
+                    freq_positive = data['freq']
+                    amplitude = data['amplitude']
+                    
+                    st.markdown("---")
+                    st.subheader("Spectrum Plot")
+                    
+                    # Create plotly figure
+                    fig_spectrum = go.Figure()
+                    fig_spectrum.add_trace(go.Scatter(
+                        x=freq_positive,
+                        y=amplitude,
+                        mode='lines',
+                        line=dict(width=1.5, color='#636EFA'),
+                        name='Spectrum'
+                    ))
+                    
+                    fig_spectrum.update_layout(
+                        title=f"Amplitude Spectrum of {data['column']} {data['title_suffix']}",
+                        xaxis_title="Frequency (Hz)",
+                        yaxis_title=data['ylabel'],
+                        height=600,
+                        width=1200,
+                        template="plotly",
+                        showlegend=False,
+                        xaxis_type="log" if data['use_loglog'] else "linear",
+                        yaxis_type="log" if data['use_loglog'] else "linear"
+                    )
+                    
+                    if data['show_grid']:
+                        if data['use_loglog']:
+                            # Enhanced grid for log-log plots with consistent major/minor ticks
+                            fig_spectrum.update_xaxes(
+                                showgrid=True,
+                                gridwidth=0.8,
+                                gridcolor='rgba(128, 128, 128, 0.3)',  # Major grid
+                                dtick=1,  # Major ticks at every power of 10 (10^0, 10^1, 10^2, ...)
+                                minor=dict(
+                                    showgrid=True,
+                                    gridwidth=0.5,
+                                    gridcolor='rgba(128, 128, 128, 0.15)',  # Minor grid
+                                    nticks=10,  # Shows all intermediate values within each decade
+                                ),
+                                ticks="outside",
+                                tickwidth=1,
+                                ticklen=5
+                            )
+                            fig_spectrum.update_yaxes(
+                                showgrid=True,
+                                gridwidth=0.8,
+                                gridcolor='rgba(128, 128, 128, 0.3)',  # Major grid
+                                dtick=1,  # Major ticks at every power of 10
+                                minor=dict(
+                                    showgrid=True,
+                                    gridwidth=0.5,
+                                    gridcolor='rgba(128, 128, 128, 0.15)',  # Minor grid
+                                    nticks=10,  # Shows all intermediate values within each decade
+                                ),
+                                ticks="outside",
+                                tickwidth=1,
+                                ticklen=5
+                            )
+                        else:
+                            # Standard grid for linear plots
+                            fig_spectrum.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
+                            fig_spectrum.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
+                    
+                    st.plotly_chart(fig_spectrum, width='stretch')
+                    
+                    st.markdown("---")
+                    st.subheader("Export Spectrum")
+                    
+                    # Create matplotlib figure for download
+                    def create_spectrum_figure(freq, amp, method, column, ylabel, use_loglog, show_grid, dpi=150):
+                        fig_mpl, ax = plt.subplots(figsize=(12, 6), dpi=dpi)
+                        
+                        if use_loglog:
+                            ax.loglog(freq, amp, linewidth=0.8, color='#636EFA')
+                        else:
+                            ax.plot(freq, amp, linewidth=0.8, color='#636EFA')
+                        
+                        ax.set_xlabel('Frequency (Hz)', fontsize=12)
+                        ax.set_ylabel(ylabel, fontsize=12)
+                        ax.set_title(f'Amplitude Spectrum of {column} ({method})', fontsize=14, fontweight='bold')
+                        
+                        if show_grid:
+                            if use_loglog:
+                                # Enhanced grid for log-log plots
+                                ax.grid(True, which='major', alpha=0.4, linewidth=0.8, color='gray', linestyle='-')
+                                ax.grid(True, which='minor', alpha=0.2, linewidth=0.5, color='gray', linestyle='-')
+                            else:
+                                ax.grid(True, which='both', alpha=0.4, linewidth=0.5)
+                        
+                        ax.spines['top'].set_visible(False)
+                        ax.spines['right'].set_visible(False)
+                        plt.tight_layout()
+                        
+                        return fig_mpl
+                    
+                    # Cache key for spectrum plot
+                    cache_key_spectrum = f"spectrum_{data['dataset']}_{data['column']}_{data['method']}_{data['fs']}_{data['use_loglog']}"
+                    
+                    if f"png_{cache_key_spectrum}" not in st.session_state:
+                        fig_mpl = create_spectrum_figure(
+                            freq_positive, amplitude, data['method'], data['column'], 
+                            data['ylabel'], data['use_loglog'], data['show_grid'], dpi=150
+                        )
+                        
+                        # Save as PNG
+                        buf_png = io.BytesIO()
+                        fig_mpl.savefig(buf_png, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+                        buf_png.seek(0)
+                        st.session_state[f"png_{cache_key_spectrum}"] = buf_png.getvalue()
+                        
+                        # Save as SVG
+                        buf_svg = io.BytesIO()
+                        fig_mpl.savefig(buf_svg, format='svg', bbox_inches='tight', facecolor='white')
+                        buf_svg.seek(0)
+                        st.session_state[f"svg_{cache_key_spectrum}"] = buf_svg.getvalue()
+                        
+                        plt.close(fig_mpl)
+                    
+                    col1, col2, col3 = st.columns([2, 2, 2])
+                    
+                    plot_filename = f"spectrum_{data['column']}_{data['method']}.png"
+                    
+                    with col1:
+                        st.download_button(
+                            label="Download as PNG",
+                            data=st.session_state[f"png_{cache_key_spectrum}"],
+                            file_name=plot_filename,
+                            mime="image/png",
+                            key="download_spectrum_png"
+                        )
+                    
+                    with col2:
+                        st.download_button(
+                            label="Download as SVG",
+                            data=st.session_state[f"svg_{cache_key_spectrum}"],
+                            file_name=plot_filename.replace(".png", ".svg"),
+                            mime="image/svg+xml",
+                            key="download_spectrum_svg"
+                        )
+                    
+                    with col3:
+                        # Export data as CSV
+                        spectrum_df = pd.DataFrame({
+                            'Frequency_Hz': freq_positive,
+                            'Amplitude': amplitude
+                        })
+                        csv_data = spectrum_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download data as CSV",
+                            data=csv_data,
+                            file_name=f"spectrum_data_{data['column']}_{data['method']}.csv",
+                            mime="text/csv",
+                            key="download_spectrum_csv"
+                        )
+        
+        # Statistics tab
+        with tab5:
             st.header("Statistical Summary")
             
             stats_dataset = st.selectbox("Select dataset:", datasets, key="stats_dataset")
