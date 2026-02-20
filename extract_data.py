@@ -609,7 +609,10 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
     processMOTUSRAW(962,10)
     
     for i in range(12):
-        MOTUSRAW[:, i+1] = eval(f'RAW{i}_temp').flatten()
+        if i in [3, 4, 5]: 
+            MOTUSRAW[:, i+1] = eval(f'RAW{i}_temp').flatten()*180/np.pi
+        else:
+            MOTUSRAW[:, i+1] = eval(f'RAW{i}_temp').flatten()
 
     # Replace NaN and Inf values with 0 before calculating QuadSum
     MOTUSRAW[:, 1] = np.where(np.isfinite(MOTUSRAW[:, 1]), MOTUSRAW[:, 1], 0)

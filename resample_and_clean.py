@@ -301,12 +301,60 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     checkpoint_start = checkpoint("MOTUSRAW processing", checkpoints)
     # =========== Resample MOTUSRAW Data ===========
     """
-    MOTUSRAW_1000hz = np.zeros((len(datasets['MOTUSRAW']), 17))
-    MOTUSRAW_100hz = np.zeros((len(datasets['MOTUSRAW'])//10, 17))
-    # Sampling down from 1000Hz to 100Hz by taking the mean of every 10 samples
-    for i in range(len(datasets['MOTUSRAW'])//10):
-        MOTUSRAW_100hz[i, :] = np.mean(datasets['MOTUSRAW'][i*10:(i+1)*10,:], axis=0)
+    Most of MOTUSRAW's data are recorded at 1000Hz, but some of them are recorded at 100Hz. 
+    We will split the data into two groups, data at 1000Hz that we'll keep at 1000Hz and data at 100Hz that we'll resample to 1000Hz. 
+    Data recorded at 1000Hz are "Xaccl", "Yaccl", "Zaccl", "Xgyro", "Ygyro", "Zgyro", "QuadSum".
+    Data recorded at 100Hz are "Time", "Xmagn", "Ymagn", "Zmagn", "Compteur100hz".
+    "Barometer" (index 11), "TemperaturePressure" (index 12) are empty columns that we will ignore. "TemperatureIMU" (index 10) contains very dirty data that we will also ignore. "TSmilli" (index 14) is recorded at 16.67Hz and is not useful for our analysis, so we will ignore it as well. "Secondes" (index 13) is recorded at 1Hz and is not useful for our analysis, so we will ignore it as well.
     """
+    MOTUSRAW_labels = [label for i, label in enumerate(labels['MOTUSRAW']) if i not in [10, 11, 12, 13, 14]]  # Crate label copy excluding index 10, 11, 12, 13, 14
+
+    # Split groups 1000Hz / 100Hz
+    MOTUSRAW_1000hz = np.zeros((len(datasets['MOTUSRAW']), 8))
+    MOTUSRAW_100hz = np.zeros((len(datasets['MOTUSRAW'])//10, 5))
+    for i in range(len(datasets['MOTUSRAW'])):
+        MOTUSRAW_1000hz[i, :] = datasets['MOTUSRAW'][i, [1, 2, 3, 4, 5, 6, -2, -1]]  # Xaccl, Yaccl, Zaccl, Xgyro, Ygyro, Zgyro, QuadSum, Compteur100hz (duplicate used for interp)
+    for i in range(len(datasets['MOTUSRAW'])//10):
+        MOTUSRAW_100hz[i, :] = datasets['MOTUSRAW'][i*10, [0, 7, 8, 9, -1]]  # Time, Xmagn, Ymagn, Zmagn, Compteur100hz
+            
+    time_original_MOTUSRAW_100Hz=MOTUSRAW_100hz[:, -1]
+    time_original_MOTUSRAW_1000hz=MOTUSRAW_1000hz[:, -1]
+    
+    # Create uniform time grid
+    t_start_p, t_end_p=time_original_MOTUSRAW_100Hz[0], time_original_MOTUSRAW_100Hz[-1]
+    duration_ms_p=t_end_p-t_start_p+1
+    num_samples_p=int(duration_ms_p) 
+    time_p = np.linspace(t_start_p, t_end_p, num_samples_p*10)
+
+    # Remove outliers of the 1000Hz group before resampling
+    MOTUSRAW_1000hz_clean, MOTUSRAW_1000hz_outlier_mask = detect_and_fill_outliers(
+        MOTUSRAW_1000hz,
+        column_idx=[0,1,2,3,4,5,6,7],
+        iqr_multiplier=3  # Adjust this: lower = more aggressive outlier detection
+    )
+
+    # Linear interpolation for each column of the 1000Hz group at 1000Hz timestamps
+    Resampled_MOTUSRAW_1000hz=np.zeros((num_samples_p*10, MOTUSRAW_1000hz_clean.shape[1]))
+    for col in range(MOTUSRAW_1000hz_clean.shape[1]):
+        Resampled_MOTUSRAW_1000hz[:, col]=np.interp(time_p, time_original_MOTUSRAW_1000hz, MOTUSRAW_1000hz_clean[:, col])
+
+    # Remove outliers before resampling
+    MOTUSRAW_100hz_clean, MOTUSRAW_100hz_outlier_mask = detect_and_fill_outliers(
+        MOTUSRAW_100hz,
+        column_idx=[0, 1, 2, 3, 4],
+        iqr_multiplier=3.0  # Adjust threshold as needed
+    )
+    
+    # Linear interpolation for each column of the 100Hz group at 1000Hz timestamps
+    Resampled_MOTUSRAW_100hzto1000hz=np.zeros((num_samples_p*10, MOTUSRAW_100hz_clean.shape[1]))
+    for col in range(MOTUSRAW_100hz_clean.shape[1]):
+        Resampled_MOTUSRAW_100hzto1000hz[:, col]=np.interp(time_p, time_original_MOTUSRAW_100Hz, MOTUSRAW_100hz_clean[:, col])
+
+    # Combine the cleaned 1000Hz data with the resampled 100Hz data (after aligning them on the same time grid)
+    Resampled_MOTUSRAW=np.zeros((num_samples_p*10, MOTUSRAW_1000hz_clean.shape[1]+MOTUSRAW_100hz_clean.shape[1]-1))  # -1 because Compteur100hz is duplicated
+    Resampled_MOTUSRAW[:, 0]=Resampled_MOTUSRAW_100hzto1000hz[:, 0]  
+    Resampled_MOTUSRAW[:, 1:8]=Resampled_MOTUSRAW_1000hz[:, :7]
+    Resampled_MOTUSRAW[:, 8:]=Resampled_MOTUSRAW_100hzto1000hz[:, 1:]
 
     print(f"  [OK] MOTUSRAW processing: {time.time() - checkpoint_start:.2f}s")
 
@@ -352,8 +400,8 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         h5f_out.attrs['Resampled_MOTUSORI_label'] = np.array(labels['MOTUSORI'], dtype='S')
 
         # Save MOTUSRAW data
-        # h5f_out.create_dataset('Resampled_MOTUSRAW', data=MOTUSRAW_100hz, compression="gzip", compression_opts=4)
-        # h5f_out.attrs['Resampled_MOTUSRAW_label'] = np.array(labels['MOTUSRAW'], dtype='S')
+        h5f_out.create_dataset('Resampled_MOTUSRAW', data=Resampled_MOTUSRAW, compression="gzip", compression_opts=4)
+        h5f_out.attrs['Resampled_MOTUSRAW_label'] = np.array(MOTUSRAW_labels, dtype='S')
     
     print(f"  [OK] HDF5 save: {time.time() - checkpoint_start:.2f}s")
     
