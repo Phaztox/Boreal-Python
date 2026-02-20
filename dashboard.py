@@ -177,7 +177,7 @@ if h5_files:
                     df_display = df.iloc[start_row:start_row+num_rows]
                 
                 df_display_rounded = df_display.copy()
-                numeric_cols = df_display_rounded.select_dtypes(include=['float64', 'float32']).columns
+                numeric_cols = df_display_rounded.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns
                 for col in numeric_cols:
                     df_display_rounded[col] = df_display_rounded[col].round(5)
                 
@@ -216,7 +216,7 @@ if h5_files:
                 if len(df_viz) == 0:
                     st.error("Dataset is empty. Cannot create visualization.")
                 else:
-                    numeric_cols = df_viz.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                    numeric_cols = df_viz.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                     
                     if numeric_cols:
                         plot_type = st.selectbox("Plot type:", ["Line Plot", "Scatter Plot", "Histogram", "Box Plot"], index=0)
@@ -370,7 +370,7 @@ if h5_files:
                     x_dataset = st.selectbox("X-axis dataset:", datasets, index=0, key="x_dataset")
                 with col2:
                     df_x = get_dataframe(file_path, x_dataset)
-                    numeric_cols_x = df_x.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                    numeric_cols_x = df_x.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                     x_axis_3d = st.selectbox("X-axis parameter:", numeric_cols_x, index=0, key="x_param")
                 
                 # Y-axis selection
@@ -379,7 +379,7 @@ if h5_files:
                     y_dataset = st.selectbox("Y-axis dataset:", datasets, index=0, key="y_dataset")
                 with col2:
                     df_y = get_dataframe(file_path, y_dataset)
-                    numeric_cols_y = df_y.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                    numeric_cols_y = df_y.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                     y_axis_3d = st.selectbox("Y-axis parameter:", numeric_cols_y, 
                                             index=min(1, len(numeric_cols_y)-1) if y_dataset == x_dataset else 0, 
                                             key="y_param")
@@ -390,7 +390,7 @@ if h5_files:
                     z_dataset = st.selectbox("Z-axis dataset:", datasets, index=0, key="z_dataset")
                 with col2:
                     df_z = get_dataframe(file_path, z_dataset)
-                    numeric_cols_z = df_z.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                    numeric_cols_z = df_z.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                     z_axis_3d = st.selectbox("Z-axis parameter:", numeric_cols_z, 
                                             index=min(2, len(numeric_cols_z)-1) if z_dataset == x_dataset else 0, 
                                             key="z_param")
@@ -402,7 +402,7 @@ if h5_files:
                     if use_color_gradient:
                         color_dataset = st.selectbox("Color dataset:", datasets, index=0, key="color_dataset")
                         df_color = get_dataframe(file_path, color_dataset)
-                        numeric_cols_color = df_color.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                        numeric_cols_color = df_color.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                         color_var_3d = st.selectbox("Color by:", numeric_cols_color, 
                                                    index=min(2, len(numeric_cols_color)-1) if color_dataset == x_dataset else 0, 
                                                    key="color_param")
@@ -620,7 +620,7 @@ if h5_files:
             
             with col2:
                 df_spectrum = get_dataframe(file_path, spectrum_dataset)
-                numeric_cols_spectrum = df_spectrum.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                numeric_cols_spectrum = df_spectrum.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                 if not numeric_cols_spectrum:
                     st.error("No numeric columns found in selected dataset")
                 else:
@@ -904,7 +904,7 @@ if h5_files:
                 st.error("Dataset is empty. No statistics to display.")
             else:
                 st.subheader("Descriptive Statistics")
-                numeric_df = df_stats.select_dtypes(include=['float64', 'int64'])
+                numeric_df = df_stats.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16'])
                 
                 if not numeric_df.empty:
                     stats_summary = numeric_df.describe().T

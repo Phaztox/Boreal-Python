@@ -156,7 +156,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     time_adnav_tes = np.linspace(t_start, t_end, num_samples_adnav)
     
     # Linear interpolation for each column
-    Resampled_ADnav_25to100 = np.zeros((num_samples_adnav, ADnav_short.shape[1]))
+    Resampled_ADnav_25to100 = np.zeros((num_samples_adnav, ADnav_short.shape[1]), dtype=np.float32)
     for col in range(ADnav_short.shape[1]):
         Resampled_ADnav_25to100[:, col] = np.interp(time_adnav_tes, time_original, ADnav_short[:, col])
 
@@ -181,7 +181,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     time_p = np.linspace(t_start_p, t_end_p, num_samples_p)
     
     # Linear interpolation for each column
-    Resampled_Pressures=np.zeros((num_samples_p, Pressures_100hz.shape[1]))
+    Resampled_Pressures=np.zeros((num_samples_p, Pressures_100hz.shape[1]), dtype=np.float32)
     for col in range(Pressures_100hz.shape[1]):
         Resampled_Pressures[:, col]=np.interp(time_p, time_original_p, Pressures_100hz[:, col])
 
@@ -208,7 +208,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     num_samples_TH=int(TH_100hz_clean[-1, -1]-TH_100hz_clean[0, -1])+1
     time_TH=np.linspace(TH_100hz_clean[0, -1], TH_100hz_clean[-1, -1], num_samples_TH)
     time_original_TH=TH_100hz_clean[:, -1]
-    Resampled_TH=np.zeros((num_samples_TH, TH_100hz_clean.shape[1]))
+    Resampled_TH=np.zeros((num_samples_TH, TH_100hz_clean.shape[1]), dtype=np.float32)
     for col in range(TH_100hz_clean.shape[1]):
         Resampled_TH[:, col] = np.interp(time_TH, time_original_TH, TH_100hz_clean[:, col])
 
@@ -229,7 +229,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     time_T2=np.linspace(T2_100hz_clean[0, -1], T2_100hz_clean[-1, -1], num_samples_T2)
     time_original_T2=T2_100hz_clean[:, -1]
     # Resample with interpolation
-    Resampled_T2=np.zeros((num_samples_T2, T2_100hz_clean.shape[1]))
+    Resampled_T2=np.zeros((num_samples_T2, T2_100hz_clean.shape[1]), dtype=np.float32)
     for col in range(T2_100hz_clean.shape[1]):
         Resampled_T2[:, col] = np.interp(time_T2, time_original_T2, T2_100hz_clean[:, col])
     
@@ -257,7 +257,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     time_IMU=np.linspace(IMU_100hz_unique[0, -1], IMU_100hz_unique[-1, -1], num_samples_IMU)
     time_original_IMU=IMU_100hz_unique[:, -1]
     # Resample with interpolation
-    Resampled_IMU=np.zeros((num_samples_IMU, IMU_100hz_unique.shape[1]))
+    Resampled_IMU=np.zeros((num_samples_IMU, IMU_100hz_unique.shape[1]), dtype=np.float32)
     for col in range(IMU_100hz_unique.shape[1]):
         Resampled_IMU[:, col] = np.interp(time_IMU, time_original_IMU, IMU_100hz_unique[:, col])
     
@@ -291,7 +291,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     time_MOTUSORI=np.linspace(MOTUSORI_100hz_clean[0, -1], MOTUSORI_100hz_clean[-1, -1], num_samples_MOTUSORI)
     time_original_MOTUSORI=MOTUSORI_100hz_clean[:, -1]
     # Resample with interpolation
-    Resampled_MOTUSORI=np.zeros((num_samples_MOTUSORI, MOTUSORI_100hz_clean.shape[1]))
+    Resampled_MOTUSORI=np.zeros((num_samples_MOTUSORI, MOTUSORI_100hz_clean.shape[1]), dtype=np.float32)
     for col in range(MOTUSORI_100hz_clean.shape[1]):
         Resampled_MOTUSORI[:, col] = np.interp(time_MOTUSORI, time_original_MOTUSORI, MOTUSORI_100hz_clean[:, col])
 
@@ -351,10 +351,12 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         Resampled_MOTUSRAW_100hzto1000hz[:, col]=np.interp(time_p, time_original_MOTUSRAW_100Hz, MOTUSRAW_100hz_clean[:, col])
 
     # Combine the cleaned 1000Hz data with the resampled 100Hz data (after aligning them on the same time grid)
-    Resampled_MOTUSRAW=np.zeros((num_samples_p*10, MOTUSRAW_1000hz_clean.shape[1]+MOTUSRAW_100hz_clean.shape[1]-1))  # -1 because Compteur100hz is duplicated
+    Resampled_MOTUSRAW=np.zeros((num_samples_p*10, MOTUSRAW_1000hz_clean.shape[1]+MOTUSRAW_100hz_clean.shape[1]-1), dtype=np.float32)  # -1 because Compteur100hz is duplicated
     Resampled_MOTUSRAW[:, 0]=Resampled_MOTUSRAW_100hzto1000hz[:, 0]  
-    Resampled_MOTUSRAW[:, 1:8]=Resampled_MOTUSRAW_1000hz[:, :7]
-    Resampled_MOTUSRAW[:, 8:]=Resampled_MOTUSRAW_100hzto1000hz[:, 1:]
+    Resampled_MOTUSRAW[:, 1:7]=Resampled_MOTUSRAW_1000hz[:, :6]
+    Resampled_MOTUSRAW[:, 7:-2]=Resampled_MOTUSRAW_100hzto1000hz[:, 1:-1]
+    Resampled_MOTUSRAW[:, -2]=Resampled_MOTUSRAW_1000hz[:, -2]
+    Resampled_MOTUSRAW[:, -1]=Resampled_MOTUSRAW_100hzto1000hz[:, -1]
 
     print(f"  [OK] MOTUSRAW processing: {time.time() - checkpoint_start:.2f}s")
 
@@ -367,18 +369,11 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         # Save ADnav
         h5f_out.create_dataset('Resampled_ADnav_25hzto100', data=Resampled_ADnav_25to100, compression="gzip", compression_opts=4)
         h5f_out.attrs['Resampled_ADnav_25hzto100_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
-        # also save the ADnav_short for reference
-        h5f_out.create_dataset('ADnav_short', data=ADnav_short, compression="gzip", compression_opts=4)
-        h5f_out.attrs['ADnav_short_label'] = np.array(labels['AD_NAVIGATION'], dtype='S')
 
         # Save Pressures
         Resampled_Pressures_label = ['Baro1 HCEM STAT', 'Baro2 HCEM STAT', 'Pressure1HCE2 Sonde 5T', 'Pressure2HCE3 Sonde 5T', 'Pressure3HCE4 Pitot', 'Pressure4HCE5 Pitot', 'Pressure5HCE10 HAUT-BAS', 'Pressure6HCE10 HAUT-BAS', 'Pressure7HCE10 GAUCHE-DROITE', 'Pressure8HCE10 GAUCHE-DROITE', 'LDE1 HAUT-BAS BRUT', 'LDE2 GAUCHE-DROITE BRUT', 'LDE1 HAUT-BAS', 'LDE2 GAUCHE-DROITE', '100Hz Time']
         h5f_out.create_dataset('Resampled_Pressures', data=Resampled_Pressures, compression="gzip", compression_opts=4)
         h5f_out.attrs['Resampled_Pressures_label'] = np.array(Resampled_Pressures_label, dtype='S')
-        # also save the original Pressures_100hz for reference
-        h5f_out.create_dataset('Pressures_100hz', data=Pressures_100hz, compression="gzip", compression_opts=4)
-        h5f_out.attrs['Pressures_100hz_label'] = np.array(Resampled_Pressures_label, dtype='S')
-
         #Save TH data
         Resampled_TH_label = ['Temp1', 'Hum1', 'Time']
         h5f_out.create_dataset('Resampled_TH', data=Resampled_TH, compression="gzip", compression_opts=4)
@@ -391,9 +386,6 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         # Save IMU data
         h5f_out.create_dataset('Resampled_IMU', data=Resampled_IMU, compression="gzip", compression_opts=4)
         h5f_out.attrs['Resampled_IMU_label'] = np.array(labels['IMU'], dtype='S')
-        # also save the original IMU_100hz for reference
-        h5f_out.create_dataset('IMU_100hz', data=IMU_100hz_unique, compression="gzip", compression_opts=4)
-        h5f_out.attrs['IMU_100hz_label'] = np.array(labels['IMU'], dtype='S')
 
         # Save MOTUSORI data
         h5f_out.create_dataset('Resampled_MOTUSORI', data=Resampled_MOTUSORI, compression="gzip", compression_opts=4)
