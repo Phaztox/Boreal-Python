@@ -13,7 +13,7 @@ class FlightDataProcessorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Flight Data Processor")
-        self.root.geometry("725x725")
+        self.root.geometry("725x750")
         
         # Variables
         self.input_file_var = tk.StringVar()
@@ -60,9 +60,9 @@ class FlightDataProcessorGUI:
             "Saving resampled data to HDF5 file"
         ]
         
-        # Expected times for ETA calculation - 6 extract steps + 5 resample steps
+        # Expected times for ETA calculation - 6 extract steps + 8 resample steps
         self.extract_expected_times = [0.5, 1.8, 2.5, 2.6, 15.4, 40.6]
-        self.resample_expected_times = [9.4, 0.9, 6.0, 1.1, 1.6, 1.6, 9.9, 10.1]
+        self.resample_expected_times = [9.8, 1, 5.8, 1, 0.9, 0.9, 2, 10.1]
         
         # Simplified ETA tracking
         self.eta_timer = None

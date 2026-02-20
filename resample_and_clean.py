@@ -94,7 +94,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     print(f"Processing: {input_h5_file}")
     print(f"{'='*50}\n")
     
-    print("[1/9] Loading HDF5 file and extracting datasets...")
+    print("[1/8] Loading HDF5 file and extracting datasets...")
     checkpoint_start = checkpoint("HDF5 load", checkpoints)
     
     with h5py.File(input_h5_file, 'r') as h5f:
@@ -130,7 +130,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     
     print(f"  [OK] HDF5 load: {time.time() - checkpoint_start:.2f}s")
         
-    print("[2/9] Processing AD_NAVIGATION resampling (25Hz to 100Hz)...")
+    print("[2/8] Processing AD_NAVIGATION resampling (25Hz to 100Hz)...")
     checkpoint_start = checkpoint("AD_NAVIGATION resampling", checkpoints)
         
     # ============ Resample AD_NAVIGATION (25Hz to 100Hz) ============
@@ -162,7 +162,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
     print(f"  [OK] AD_NAVIGATION resampling: {time.time() - checkpoint_start:.2f}s")
     
-    print("[3/9] Processing Pressures resampling (1000Hz to 100Hz)...")
+    print("[3/8] Processing Pressures resampling (1000Hz to 100Hz)...")
     checkpoint_start = checkpoint("Pressures resampling", checkpoints)
         
     # ============ Resample Pressures (1000Hz -> 100Hz) ============
@@ -187,7 +187,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
     print(f"  [OK] Pressures resampling: {time.time() - checkpoint_start:.2f}s")
     
-    print("[4/9] Processing Temperature data with outlier detection...")
+    print("[4/8] Processing Temperature data with outlier detection...")
     checkpoint_start = checkpoint("Temperature processing", checkpoints)
         
     # ============ Resample Temperature Data ============
@@ -235,7 +235,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     
     print(f"  [OK] Temperature processing: {time.time() - checkpoint_start:.2f}s")
         
-    print("[5/9] Processing IMU data with outlier detection and interpolation...")
+    print("[5/8] Processing IMU data with outlier detection and interpolation...")
     checkpoint_start = checkpoint("IMU processing", checkpoints)
 
     # ============ Resample IMU Data ===========
@@ -263,7 +263,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     
     print(f"  [OK] IMU processing: {time.time() - checkpoint_start:.2f}s")
 
-    print("[6/9] Processing MOTUSORI data with outlier detection and interpolation...")
+    print("[6/8] Processing MOTUSORI data with outlier detection and interpolation...")
     checkpoint_start = checkpoint("MOTUSORI processing", checkpoints)
 
     # =========== Resample MOTUSORI Data ===========
@@ -297,7 +297,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
     print(f"  [OK] MOTUSORI processing: {time.time() - checkpoint_start:.2f}s")
 
-    print("[7/9] Processing MOTUSRAW data with outlier detection and interpolation...")
+    print("[7/8] Processing MOTUSRAW data with outlier detection and interpolation...")
     checkpoint_start = checkpoint("MOTUSRAW processing", checkpoints)
     # =========== Resample MOTUSRAW Data ===========
     """
@@ -310,7 +310,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
 
     print(f"  [OK] MOTUSRAW processing: {time.time() - checkpoint_start:.2f}s")
 
-    print("[8/9] Saving resampled data to HDF5 file...")
+    print("[8/8] Saving resampled data to HDF5 file...")
     checkpoint_start = checkpoint("HDF5 save", checkpoints)
         
     # ============ Save to HDF5 ============
