@@ -156,9 +156,12 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     time_adnav_tes = np.linspace(t_start, t_end, num_samples_adnav)
     
     # Linear interpolation for each column
-    Resampled_ADnav_25to100 = np.zeros((num_samples_adnav, ADnav_short.shape[1]), dtype=np.float32)
+    Resampled_ADnav_25to100 = np.zeros((num_samples_adnav, ADnav_short.shape[1]), dtype=np.float64)
     for col in range(ADnav_short.shape[1]):
         Resampled_ADnav_25to100[:, col] = np.interp(time_adnav_tes, time_original, ADnav_short[:, col])
+    
+    Resampled_ADnav_25to100[:, :-2] = Resampled_ADnav_25to100[:, :-2].astype(np.float32)
+    Resampled_ADnav_25to100[:, -1] = Resampled_ADnav_25to100[:, -1].astype(np.float32)
 
     print(f"  [OK] AD_NAVIGATION resampling: {time.time() - checkpoint_start:.2f}s")
     
@@ -257,9 +260,12 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     time_IMU=np.linspace(IMU_100hz_unique[0, -1], IMU_100hz_unique[-1, -1], num_samples_IMU)
     time_original_IMU=IMU_100hz_unique[:, -1]
     # Resample with interpolation
-    Resampled_IMU=np.zeros((num_samples_IMU, IMU_100hz_unique.shape[1]), dtype=np.float32)
+    Resampled_IMU=np.zeros((num_samples_IMU, IMU_100hz_unique.shape[1]), dtype=np.float64)
     for col in range(IMU_100hz_unique.shape[1]):
         Resampled_IMU[:, col] = np.interp(time_IMU, time_original_IMU, IMU_100hz_unique[:, col])
+    
+    Resampled_IMU[:, :-2] = Resampled_IMU[:, :-2].astype(np.float32)
+    Resampled_IMU[:, -1] = Resampled_IMU[:, -1].astype(np.float32)
     
     print(f"  [OK] IMU processing: {time.time() - checkpoint_start:.2f}s")
 
@@ -290,10 +296,14 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     num_samples_MOTUSORI=int(MOTUSORI_100hz_clean[-1, -1]-MOTUSORI_100hz_clean[0, -1])+1
     time_MOTUSORI=np.linspace(MOTUSORI_100hz_clean[0, -1], MOTUSORI_100hz_clean[-1, -1], num_samples_MOTUSORI)
     time_original_MOTUSORI=MOTUSORI_100hz_clean[:, -1]
-    # Resample with interpolation
-    Resampled_MOTUSORI=np.zeros((num_samples_MOTUSORI, MOTUSORI_100hz_clean.shape[1]), dtype=np.float32)
+    # Resample with interpolation (use float64 for interpolation accuracy)
+    Resampled_MOTUSORI=np.zeros((num_samples_MOTUSORI, MOTUSORI_100hz_clean.shape[1]), dtype=np.float64)
     for col in range(MOTUSORI_100hz_clean.shape[1]):
         Resampled_MOTUSORI[:, col] = np.interp(time_MOTUSORI, time_original_MOTUSORI, MOTUSORI_100hz_clean[:, col])
+    
+    # Optimize dtypes: convert all columns to float32 except column -2 (keep as float64)
+    Resampled_MOTUSORI[:, :-2] = Resampled_MOTUSORI[:, :-2].astype(np.float32)
+    Resampled_MOTUSORI[:, -1] = Resampled_MOTUSORI[:, -1].astype(np.float32)
 
     print(f"  [OK] MOTUSORI processing: {time.time() - checkpoint_start:.2f}s")
 
@@ -387,7 +397,7 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
         h5f_out.create_dataset('Resampled_IMU', data=Resampled_IMU, compression="gzip", compression_opts=4)
         h5f_out.attrs['Resampled_IMU_label'] = np.array(labels['IMU'], dtype='S')
 
-        # Save MOTUSORI data
+        # Save MOTUSORI data with mixed precision (float32 for most, float64 for column -2)
         h5f_out.create_dataset('Resampled_MOTUSORI', data=Resampled_MOTUSORI, compression="gzip", compression_opts=4)
         h5f_out.attrs['Resampled_MOTUSORI_label'] = np.array(labels['MOTUSORI'], dtype='S')
 
