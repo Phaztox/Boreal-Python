@@ -61,7 +61,7 @@ class FlightDataProcessorGUI:
         ]
         
         # Expected times for ETA calculation - 6 extract steps + 8 resample steps
-        self.extract_expected_times = [0.5, 1.8, 2.5, 2.6, 15.4, 40.6]
+        self.extract_expected_times = [0.5, 1.8, 2.5, 4, 15.4, 40.6]
         self.resample_expected_times = [9, 1, 6, 1.1, 0.9, 1, 30, 19]
         
         # Simplified ETA tracking
