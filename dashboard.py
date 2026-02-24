@@ -20,7 +20,7 @@ from data_utils import list_datasets, get_dataset_info, get_dataframe
 import h5py
 import streamlit.components.v1 as components
 import numpy as np
-from scipy.signal import welch, windows
+from scipy.signal import welch, windows, bessel, filtfilt
 
 st.set_page_config(
     page_title="UAV Data Browser",
@@ -587,6 +587,20 @@ if h5_files:
             st.header("Spectrum Analysis")
             st.markdown("Analyze the frequency spectrum of your data using different methods.")
             
+            # Helper function for Bessel filter
+            def apply_bessel_filter(data, fs, cutoff_ratio=5, order=4):
+                """
+                Apply a Bessel low-pass filter to the data
+                cutoff_ratio: fs/cutoff_ratio = cutoff frequency
+                order: filter order
+                """
+                cutoff = fs / cutoff_ratio
+                nyquist = 0.5 * fs
+                normal_cutoff = cutoff / nyquist
+                b, a = bessel(order, normal_cutoff, btype='low', analog=False)
+                filtered_data = filtfilt(b, a, data)
+                return filtered_data
+            
             # Helper function for multitaper method
             def multitaper_psd(signal, fs, NW=4, k=7):
                 """
@@ -651,6 +665,31 @@ if h5_files:
                 
                 st.markdown("---")
                 
+                # Bessel filter options
+                st.markdown("**Preprocessing:**")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    use_bessel = st.checkbox("Apply Bessel filter", value=False, key="use_bessel",
+                                            help="Apply a low-pass Bessel filter before spectral analysis")
+                with col2:
+                    if use_bessel:
+                        bessel_cutoff_ratio = st.number_input("Cutoff ratio (fs/ratio):", 
+                                                             min_value=2, max_value=100, value=5, step=1,
+                                                             key="bessel_cutoff",
+                                                             help="Cutoff frequency = sampling_freq / ratio")
+                    else:
+                        bessel_cutoff_ratio = 5
+                with col3:
+                    if use_bessel:
+                        bessel_order = st.number_input("Filter order:", 
+                                                      min_value=1, max_value=10, value=4, step=1,
+                                                      key="bessel_order",
+                                                      help="Higher order = sharper cutoff")
+                    else:
+                        bessel_order = 4
+                
+                st.markdown("---")
+                
                 # Additional options
                 col1, col2 = st.columns(2)
                 with col1:
@@ -675,6 +714,10 @@ if h5_files:
                             if len(signal) == 0:
                                 st.error("Signal contains only NaN values")
                             else:
+                                # Apply Bessel filter if enabled
+                                if use_bessel:
+                                    signal = apply_bessel_filter(signal, fs, bessel_cutoff_ratio, bessel_order)
+                                
                                 # Compute spectrum based on selected method
                                 if spectrum_method == "FFT":
                                     N = len(signal)
@@ -686,7 +729,7 @@ if h5_files:
                                     amplitude = 2 * np.abs(fft_result[:N//2])
                                     
                                     ylabel = "Amplitude"
-                                    title_suffix = "(FFT)"
+                                    title_suffix = "(FFT" + (" - Bessel Filtered)" if use_bessel else ")")
                                 
                                 elif spectrum_method == "Welch":
                                     f, Pxx = welch(signal, fs=fs, nperseg=nperseg, scaling='density')
@@ -697,7 +740,7 @@ if h5_files:
                                     freq_positive = f
                                     
                                     ylabel = "Amplitude"
-                                    title_suffix = "(Welch Method)"
+                                    title_suffix = "(Welch Method" + (" - Bessel Filtered)" if use_bessel else ")")
                                 
                                 elif spectrum_method == "Multitaper":
                                     k = 2 * NW - 1
@@ -709,7 +752,7 @@ if h5_files:
                                     freq_positive = f
                                     
                                     ylabel = "Amplitude"
-                                    title_suffix = "(Multitaper Method)"
+                                    title_suffix = "(Multitaper Method" + (" - Bessel Filtered)" if use_bessel else ")")
                                 
                                 # Store in session state
                                 st.session_state['spectrum_data'] = {
@@ -722,10 +765,14 @@ if h5_files:
                                     'ylabel': ylabel,
                                     'title_suffix': title_suffix,
                                     'use_loglog': use_loglog,
-                                    'show_grid': show_grid
+                                    'show_grid': show_grid,
+                                    'use_bessel': use_bessel,
+                                    'bessel_cutoff_ratio': bessel_cutoff_ratio if use_bessel else None,
+                                    'bessel_order': bessel_order if use_bessel else None
                                 }
                                 
-                                st.success(f"✓ Spectrum computed using {spectrum_method} method")
+                                filter_msg = " with Bessel filter" if use_bessel else ""
+                                st.success(f"✓ Spectrum computed using {spectrum_method} method{filter_msg}")
                         
                         except Exception as e:
                             st.error(f"Error computing spectrum: {str(e)}")
@@ -806,7 +853,7 @@ if h5_files:
                     st.subheader("Export Spectrum")
                     
                     # Create matplotlib figure for download
-                    def create_spectrum_figure(freq, amp, method, column, ylabel, use_loglog, show_grid, dpi=150):
+                    def create_spectrum_figure(freq, amp, title_suffix, column, ylabel, use_loglog, show_grid, dpi=150):
                         fig_mpl, ax = plt.subplots(figsize=(12, 6), dpi=dpi)
                         
                         if use_loglog:
@@ -816,7 +863,7 @@ if h5_files:
                         
                         ax.set_xlabel('Frequency (Hz)', fontsize=12)
                         ax.set_ylabel(ylabel, fontsize=12)
-                        ax.set_title(f'Amplitude Spectrum of {column} ({method})', fontsize=14, fontweight='bold')
+                        ax.set_title(f'Amplitude Spectrum of {column} {title_suffix}', fontsize=14, fontweight='bold')
                         
                         if show_grid:
                             if use_loglog:
@@ -833,11 +880,12 @@ if h5_files:
                         return fig_mpl
                     
                     # Cache key for spectrum plot
-                    cache_key_spectrum = f"spectrum_{data['dataset']}_{data['column']}_{data['method']}_{data['fs']}_{data['use_loglog']}"
+                    bessel_suffix = f"_bessel_{data['bessel_cutoff_ratio']}_{data['bessel_order']}" if data.get('use_bessel', False) else ""
+                    cache_key_spectrum = f"spectrum_{data['dataset']}_{data['column']}_{data['method']}_{data['fs']}_{data['use_loglog']}{bessel_suffix}"
                     
                     if f"png_{cache_key_spectrum}" not in st.session_state:
                         fig_mpl = create_spectrum_figure(
-                            freq_positive, amplitude, data['method'], data['column'], 
+                            freq_positive, amplitude, data['title_suffix'], data['column'], 
                             data['ylabel'], data['use_loglog'], data['show_grid'], dpi=150
                         )
                         
@@ -857,7 +905,9 @@ if h5_files:
                     
                     col1, col2, col3 = st.columns([2, 2, 2])
                     
-                    plot_filename = f"spectrum_{data['column']}_{data['method']}.png"
+                    # Generate filename with Bessel filter indication
+                    bessel_file_suffix = "_bessel" if data.get('use_bessel', False) else ""
+                    plot_filename = f"spectrum_{data['column']}_{data['method']}{bessel_file_suffix}.png"
                     
                     with col1:
                         st.download_button(
@@ -887,7 +937,7 @@ if h5_files:
                         st.download_button(
                             label="Download data as CSV",
                             data=csv_data,
-                            file_name=f"spectrum_data_{data['column']}_{data['method']}.csv",
+                            file_name=f"spectrum_data_{data['column']}_{data['method']}{bessel_file_suffix}.csv",
                             mime="text/csv",
                             key="download_spectrum_csv"
                         )
