@@ -179,6 +179,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
     checkpoint_start = checkpoint("AD_NAVIGATION, IMU, counters", checkpoints)
     
     def extract_uint64_forward(*cols):
+        """Extract a uint64 value from specified columns in forward order"""
         result = np.zeros(matrix.shape[0])
         sorted_cols = sorted(cols)
         shifts = [0, 8, 16, 24, 32, 40, 48, 56]
@@ -188,6 +189,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
         return result
 
     def extract_uint64_reverse(*cols):
+        """Extract a uint64 value from specified columns in reverse order"""
         result = np.zeros(matrix.shape[0])
         sorted_cols = sorted(cols, reverse=True)
         shifts = [0, 8, 16, 24, 32, 40, 48, 56]
@@ -646,6 +648,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
         hf.create_dataset('MOTUSORI', data=MOTUSORI, compression='gzip', compression_opts=4)
         hf.create_dataset('PaquetWind', data=PaquetWind, compression='gzip', compression_opts=4)
         hf.create_dataset('AirDataSensors', data=AirDataSensors, compression='gzip', compression_opts=4)
+        hf.create_dataset('Pattern', data=Pattern, compression='gzip', compression_opts=4)
         
         # Store column labels as attributes for easy reference
         hf.attrs['AD_NAVIGATION_LABEL'] = AD_NAVIGATION_LABEL
@@ -658,6 +661,7 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
         hf.attrs['MOTUSORI_label'] = MOTUSORI_label
         hf.attrs['PaquetWind_label'] = PaquetWind_label
         hf.attrs['AirDataSensors_label'] = AirDataSensors_label
+        
 
     print(f"  [OK] HDF5 file saved ({output_path}): {time.time() - checkpoint_start:.2f}s")
 
