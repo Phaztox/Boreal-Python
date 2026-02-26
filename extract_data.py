@@ -268,9 +268,9 @@ def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resulta
     print("[3/6] Processing Air Data, Wind, and Pressures...")
     checkpoint_start = checkpoint("Air Data, Wind, Pressures", checkpoints)
     Tsmilli = (AD_NAVIGATION[:,3]*1e6+AD_NAVIGATION[:,4])/1e3
-
-    # Calculate once, reuse everywhere - keep as 1D for IMU, create V2 for 10Hz data
     TsmilliV2 = np.repeat(Tsmilli, 10)
+
+    # IMU
     IMU[:,0] = compteurSD
     IMU[:,1] = dec2single(100, 101, 102, 103)  # Xaccl
     IMU[:,2] = dec2single(104, 105, 106, 107)  # Yaccl
