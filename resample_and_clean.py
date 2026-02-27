@@ -296,12 +296,12 @@ def resample_and_clean_data(input_h5_file, offset1=0, offset2=0, offsetP1=0, off
     num_samples_MOTUSORI=int(MOTUSORI_100hz_clean[-1, -1]-MOTUSORI_100hz_clean[0, -1])+1
     time_MOTUSORI=np.linspace(MOTUSORI_100hz_clean[0, -1], MOTUSORI_100hz_clean[-1, -1], num_samples_MOTUSORI)
     time_original_MOTUSORI=MOTUSORI_100hz_clean[:, -1]
-    # Resample with interpolation (use float64 for interpolation accuracy)
+    # Resample with interpolation 
     Resampled_MOTUSORI=np.zeros((num_samples_MOTUSORI, MOTUSORI_100hz_clean.shape[1]), dtype=np.float64)
     for col in range(MOTUSORI_100hz_clean.shape[1]):
         Resampled_MOTUSORI[:, col] = np.interp(time_MOTUSORI, time_original_MOTUSORI, MOTUSORI_100hz_clean[:, col])
     
-    # Optimize dtypes: convert all columns to float32 except column -2 (keep as float64)
+    # Optimize dtypes: convert all columns to float32 except column -2 
     Resampled_MOTUSORI[:, :-2] = Resampled_MOTUSORI[:, :-2].astype(np.float32)
     Resampled_MOTUSORI[:, -1] = Resampled_MOTUSORI[:, -1].astype(np.float32)
 
