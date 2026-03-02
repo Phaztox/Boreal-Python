@@ -12,9 +12,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import sys
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import io
 from data_utils import list_datasets, get_dataset_info, get_dataframe
 import h5py
@@ -526,7 +526,7 @@ if h5_files:
                                             {'args': [[f.name], {'frame': {'duration': 0, 'redraw': True}, 
                                                                 'mode': 'immediate', 
                                                                 'transition': {'duration': 0}}],
-                                             'label': f'{int(100*i/(len(frames)-1))}%',
+                                             'label': f'{int(100*i/max(1, len(frames)-1))}%',
                                              'method': 'animate'}
                                             for i, f in enumerate(frames)
                                         ],
