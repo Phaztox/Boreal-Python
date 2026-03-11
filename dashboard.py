@@ -12,6 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import sys
+import tempfile
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -51,38 +52,77 @@ st.markdown("Interactive dashboard for exploring HDF5 flight data files")
 
 st.sidebar.header("File Selection")
 
-# Get data directory
-if len(sys.argv) > 1:
-    results_dir = sys.argv[1]
-else:
-    results_dir = "Processed Data"
+# --- Directory selection ---
+default_dir = sys.argv[1] if len(sys.argv) > 1 else "Processed Data"
+if 'results_dir' not in st.session_state:
+    st.session_state['results_dir'] = default_dir
 
-st.sidebar.info(f"Data Directory: {results_dir}")
+# Apply browsed folder before the widget renders
+if 'browsed_folder' in st.session_state:
+    st.session_state['dir_input'] = st.session_state.pop('browsed_folder')
+
+results_dir = st.sidebar.text_input("Data directory:", value=st.session_state['results_dir'], key="dir_input")
+st.session_state['results_dir'] = results_dir
+
+if st.sidebar.button("Browse folder", key="browse_folder"):
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import tkinter as tk; from tkinter import filedialog; "
+         "root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); "
+         f"print(filedialog.askdirectory(initialdir=r'{results_dir}', title='Select data directory')); "
+         "root.destroy()"],
+        capture_output=True, text=True, timeout=120
+    )
+    folder = result.stdout.strip()
+    if folder:
+        st.session_state['browsed_folder'] = folder
+        st.rerun()
+
+results_dir = st.session_state['results_dir']
+
 if os.path.exists(results_dir):
-    h5_files = [f for f in os.listdir(results_dir) if f.endswith('.h5')]
+    h5_files = sorted([f for f in os.listdir(results_dir) if f.endswith('.h5')])
 else:
     h5_files = []
     st.sidebar.error(f"Directory '{results_dir}' not found!")
 
-if h5_files:
+# --- Drag & drop upload ---
+st.sidebar.markdown("---")
+uploaded_file = st.sidebar.file_uploader("Or drag & drop an HDF5 file:", type=["h5", "hdf5"], key="h5_upload")
+
+file_path = None
+if uploaded_file is not None:
+    # Write uploaded file to a temp file so h5py can open it by path
+    if 'uploaded_tmp_path' not in st.session_state or st.session_state.get('uploaded_file_name') != uploaded_file.name:
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.h5')
+        tmp.write(uploaded_file.getbuffer())
+        tmp.close()
+        st.session_state['uploaded_tmp_path'] = tmp.name
+        st.session_state['uploaded_file_name'] = uploaded_file.name
+    file_path = st.session_state['uploaded_tmp_path']
+    st.sidebar.success(f"Uploaded: {uploaded_file.name}")
+elif h5_files:
     selected_file = st.sidebar.selectbox(
         "Select HDF5 file:",
         h5_files,
         index=0
     )
-    
-    # Clear plot cache when H5 file changes
+    file_path = os.path.join(results_dir, selected_file)
+else:
+    selected_file = None
+
+# Clear plot cache when file changes
+if file_path is not None:
+    current_file_id = file_path if uploaded_file is None else uploaded_file.name
     if 'last_selected_file' not in st.session_state:
-        st.session_state['last_selected_file'] = selected_file
-    elif st.session_state['last_selected_file'] != selected_file:
-        # File changed - clear all plot caches
+        st.session_state['last_selected_file'] = current_file_id
+    elif st.session_state['last_selected_file'] != current_file_id:
         keys_to_remove = [key for key in st.session_state.keys() if key.startswith('png_') or key.startswith('svg_')]
         for key in keys_to_remove:
             del st.session_state[key]
-        st.session_state['last_selected_file'] = selected_file
-        st.session_state['last_viz_dataset'] = None  # Also reset dataset tracking
-    
-    file_path = os.path.join(results_dir, selected_file)
+        st.session_state['last_selected_file'] = current_file_id
+        st.session_state['last_viz_dataset'] = None
     
     file_size = os.path.getsize(file_path) / (1024**2)
     st.sidebar.metric("File Size", f"{file_size:.1f} MB")
@@ -182,13 +222,28 @@ if h5_files:
                     df_display_rounded[col] = df_display_rounded[col].round(5)
                 
                 st.dataframe(df_display_rounded, width='content')
-                csv = df_display.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Download displayed data as CSV",
-                    data=csv,
-                    file_name=f"{selected_dataset}_{start_row}_{start_row+num_rows}.csv",
-                    mime="text/csv"
-                )
+                
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    csv = df_display.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download displayed data as CSV",
+                        data=csv,
+                        file_name=f"{selected_dataset}_{start_row}_{start_row+num_rows}.csv",
+                        mime="text/csv"
+                    )
+                with col_dl2:
+                    h5_buffer = io.BytesIO()
+                    with h5py.File(h5_buffer, 'w') as hf_out:
+                        hf_out.create_dataset(selected_dataset, data=df_display.values)
+                        hf_out.attrs[f'{selected_dataset}_label'] = list(df_display.columns)
+                    h5_buffer.seek(0)
+                    st.download_button(
+                        label="Download displayed data as HDF5",
+                        data=h5_buffer,
+                        file_name=f"{selected_dataset}_{start_row}_{start_row+num_rows}.h5",
+                        mime="application/x-hdf5"
+                    )
         
         # Visualization tab
         with tab3:
@@ -988,8 +1043,8 @@ if h5_files:
         st.exception(e)
 
 else:
-    st.warning(f"No HDF5 files found in '{results_dir}' directory")
-    st.info("Run your data extraction script first to generate HDF5 files")
+    st.warning("No HDF5 file selected")
+    st.info("Choose a directory containing HDF5 files in the sidebar, or drag & drop a file.")
 
 # Footer
 st.sidebar.markdown("---")
