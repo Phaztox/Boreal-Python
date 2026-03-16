@@ -7,8 +7,6 @@
    - On macOS/Linux: `source .venv/bin/activate`
 5. Install the required dependencies: `pip install -r requirements.txt`
 
-
-
 # Usage
 1. Run the GUI: `GUI_process_data.bat` (Windows) or `python main.py` (macOS/Linux)
 2. Follow the prompts in the GUI to select your input binary flight data file, set any desired offsets, and choose whether to extract data, resample and clean data, launch the dashboard or either combination of these options.
@@ -22,6 +20,7 @@
   * **Offset 2**: This offset is applied to the same datasets as Offset 1 but is used to trim the end of the recording. 
   * **Offset P1**: This offset is used to trim the start of the recording for the MOTUSRAW and Pressures datasets, which are recording data at 1000Hz. It will generally be 10 times the value of Offset 1. 
   * **Offset P2**: This offset is applies to the same datasets as Offset P1 but is used to trim the end of the recording.
+* There are two buttons to shutdown Streamlit processes. `Shutdown Dashboard` will shutdown the last dashboard process launched by the GUI, while `Kill Streamlit Processes` will kill all Streamlit processes running on the system (useful if you have multiple dashboards running).
 
 # Documentation
 ## Short explanation of the files in the repository: <br/>
