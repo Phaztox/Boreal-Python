@@ -1,6 +1,5 @@
 import h5py
 import pandas as pd
-import numpy as np
 
 
 def load_h5_data(filename, dataset_name=None):

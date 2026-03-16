@@ -2,16 +2,11 @@
 Utility functions for resampling and cleaning flight data after their extraction.
 The goal is to get rid of NaN, infinite values, nulls, and to resample the data to a uniform time grid.
 """
-# the file reference for this one is 'Resample_ADnav.m' from the MATLAB codebase.
-
 import os
-import pandas as pd
 import numpy as np
 import h5py
 import time
 from pathlib import Path
-from scipy.signal import resample, resample_poly
-import matplotlib.pyplot as plt
 
 def checkpoint(name, checkpoints_dict):
     """Record a timing checkpoint"""

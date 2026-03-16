@@ -1,9 +1,5 @@
 import numpy as np
-from scipy.io import savemat
-import struct
-from scipy.io import loadmat
 import h5py
-import pandas as pd
 import os
 import time
 import warnings
