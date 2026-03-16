@@ -76,7 +76,7 @@ The raw matrix consists of `uint8` bytes. The script contains several specialize
 #### 3. Matrix Demultiplexing & Resampling
 The main function pre-allocates large zero-filled NumPy arrays (`AD_NAVIGATION`, `IMU`, `Pressures`, etc.) before population to ensure maximum speed.
 *   **Column Mapping**: It extracts data by targeting specific hardware packet offsets. 
-*   **Frequency Handling**: Different sensors sample at different frequencies. The script handles high-frequency data (like `MOTUSRAW` or `Pressures` at 1000Hz vs 100Hz baseline) by allocating $10 \times \text{line\_count}$ rows and using NumPy functions like `.repeat(10)` to synchronize slower timestamps alongside high-frequency sensor readings.
+*   **Frequency Handling**: Different sensors sample at different frequencies. The script handles high-frequency data (like `MOTUSRAW` or `Pressures` at 1000Hz vs 100Hz baseline) by allocating $10 \times \text{line count}$ rows and using NumPy functions like `.repeat(10)` to synchronize slower timestamps alongside high-frequency sensor readings.
 
 #### 4. GUI Synchronization 
 *   **Checkpointing (`checkpoint`)**: Throughout the execution, the script prints specific formatted strings (like `[2/6] Processing AD_NAVIGATION...`). These are not just console logs; they are specifically designed to be intercepted by `main.py`'s `parse_checkpoint_output` to drive the GUI's progress bar and ETA calculations.
