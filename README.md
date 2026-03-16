@@ -1,11 +1,30 @@
 # Installation
-[to be done (later)]
+1. Clone the repository: `git clone https://github.com/yourusername/yourrepository.git`
+2. Navigate to the project directory: `cd yourrepository`
+3. Create a virtual environment: `python -m venv .venv`
+4. Activate the virtual environment:
+   - On Windows: `.venv\Scripts\activate`
+   - On macOS/Linux: `source .venv/bin/activate`
+5. Install the required dependencies: `pip install -r requirements.txt`
+
+
 
 # Usage
-[to be done (later)]
+1. Run the GUI: `GUI_process_data.bat` (Windows) or `python main.py` (macOS/Linux)
+2. Follow the prompts in the GUI to select your input binary flight data file, set any desired offsets, and choose whether to extract data, resample and clean data, launch the dashboard or either combination of these options.
+3. Once the processing is complete, you can launch the dashboard to visualize the processed data. The dashboard will automatically open in your default web browser. You can also access it by navigating to `http://localhost:8501` in your browser.
+
+## GUI Details
+* The first two lines allow to choose the input file and the output directory (`Processes data`) by default. The output directory is where the extracted and cleaned data will be saved. Right below is the directory where the **Dashboard** will search for h5 files. By default set to `Processed data`, this path can also be changed in the dashboard UI. 
+* The GUI allows you to select a binary flight data file (`.bin`) and specify offsets to trim the start (**Offset 1**) and end (**Offset 2**) of the recording when extracting data. 
+* In the Resample and Clean section, there are two types of Offsets : 
+  * **Offset 1**: This offset is used to trim the start of the recording. It is applied to all datasets using 100Hz recording (AD_NAVIGATION, IMU, ...).
+  * **Offset 2**: This offset is applied to the same datasets as Offset 1 but is used to trim the end of the recording. 
+  * **Offset P1**: This offset is used to trim the start of the recording for the MOTUSRAW and Pressures datasets, which are recording data at 1000Hz. It will generally be 10 times the value of Offset 1. 
+  * **Offset P2**: This offset is applies to the same datasets as Offset P1 but is used to trim the end of the recording.
 
 # Documentation
-## Short explanation of the code and files in the repository: <br/>
+## Short explanation of the files in the repository: <br/>
 * **`GUI_process_data.bat`**: A batch file that runs the GUI process data script. It's the only file that needs to be executed to start the GUI and start the application. 
 * **`main.py`**: The main Python script that contains the code for the GUI. Basically the code that runs when you execute the GUI_process_data.bat file.
 * **`extract_data.py`**: A Python script that contains the code used by the GUI to extract data from the input binary flight data file. This script is called by the main.py script when the user uses the "Extract Data" function in the GUI.

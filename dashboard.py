@@ -1,11 +1,3 @@
-"""
-Interactive Dashboard for browsing HDF5 flight data files.
-A modern web-based UI for exploring your data - similar to Excel or MATLAB viewer.
-
-To run:
-    streamlit run dashboard.py -- [data_directory]
-"""
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px

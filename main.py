@@ -551,7 +551,7 @@ class FlightDataProcessorGUI:
             
             if os.path.exists(venv_python) and os.path.exists(dashboard_script):
                 cmd = [venv_python, "-m", "streamlit", "run", dashboard_script, "--", output_dir]
-                self.dashboard_process = subprocess.Popen(cmd, shell=True)
+                self.dashboard_process = subprocess.Popen(cmd)
                 self.log_message(f"[SUCCESS] Dashboard launched successfully with data directory: {output_dir}")
             else:
                 self.log_message(f"[ERROR] Python or dashboard script not found")
@@ -568,9 +568,9 @@ class FlightDataProcessorGUI:
             ports_found = []
             
             for line in result.stdout.split('\n'):
-                for port in ['8501', '8502', '8503', '8504', '8505']:
-                    if f':{port}' in line and 'LISTENING' in line and port not in ports_found:
-                        ports_found.append(port)
+                for port in range(8501, 8550):
+                    if f':{port}' in line and 'LISTENING' in line and str(port) not in ports_found:
+                        ports_found.append(str(port))
             
             if ports_found:
                 self.log_message(f"[INFO] Detected existing dashboard(s) on port(s): {', '.join(ports_found)}")
@@ -584,7 +584,6 @@ class FlightDataProcessorGUI:
                 self.dashboard_process.terminate()
                 self.log_message("[INFO] Dashboard process terminated")
                 self.dashboard_process = None
-            self.kill_streamlit_processes()
         except Exception as e:
             self.log_message(f"[ERROR] Error shutting down dashboard: {str(e)}")
     
@@ -595,7 +594,7 @@ class FlightDataProcessorGUI:
             killed = 0
             
             for line in result.stdout.split('\n'):
-                for port in ['8501', '8502', '8503', '8504', '8505']:
+                for port in range(8501, 8550):
                     if f':{port}' in line and 'LISTENING' in line:
                         parts = line.split()
                         if len(parts) > 4 and parts[-1].isdigit():
