@@ -628,5 +628,5 @@ def GUI_launch():
     app = FlightDataProcessorGUI(root)
     root.mainloop()
 
-if __name__ == '__GUI_launch__':
+if __name__ == '__main__':
     GUI_launch()
