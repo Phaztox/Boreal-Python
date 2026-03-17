@@ -1,14 +1,18 @@
 # Installation
-1. Clone the repository: `git clone https://github.com/yourusername/yourrepository.git`
-2. Navigate to the project directory: `cd yourrepository`
-3. Create a virtual environment: `python -m venv .venv`
-4. Activate the virtual environment:
+1. If you haven't already, download and install Python 3.10 or higher from the official website: `https://www.python.org/downloads/`
+   - Make sure to add Python to your system PATH during installation. This will allow you to run Python and pip from the command line.
+2. If you haven't already, download and install Git from the official website: `https://git-scm.com/downloads`
+   - This will allow you to clone the repository using Git.
+3. In the choosen directory, clone the repository using Git in the terminal: `git clone https://github.com/Phaztox/Borel-Python.git`
+4. Navigate to the project directory: `cd Borel-Python`
+5. Create a virtual environment: `python -m venv .venv`
+6. Activate the virtual environment:
    - On Windows: `.venv\Scripts\activate`
    - On macOS/Linux: `source .venv/bin/activate`
-5. Install the required dependencies: `pip install -r requirements.txt`
+7. Install the required dependencies: `pip install -r requirements.txt`
 
 # Usage
-1. Run the GUI: `GUI_process_data.bat` (Windows) or `python main.py` (macOS/Linux)
+1. Run the GUI: `GUI_launch.bat` (Windows) or `python GUI_launch.py` (macOS/Linux)
 2. Follow the prompts in the GUI to select your input binary flight data file, set any desired offsets, and choose whether to extract data, resample and clean data, launch the dashboard or either combination of these options.
 3. Once the processing is complete, you can launch the dashboard to visualize the processed data. The dashboard will automatically open in your default web browser. You can also access it by navigating to `http://localhost:8501` in your browser.
 
@@ -24,11 +28,11 @@
 
 # Documentation
 ## Short explanation of the files in the repository: <br/>
-* **`GUI_process_data.bat`**: A batch file that runs the GUI process data script. It's the only file that needs to be executed to start the GUI and start the application. 
-* **`main.py`**: The main Python script that contains the code for the GUI. Basically the code that runs when you execute the GUI_process_data.bat file.
-* **`extract_data.py`**: A Python script that contains the code used by the GUI to extract data from the input binary flight data file. This script is called by the main.py script when the user uses the "Extract Data" function in the GUI.
-* **`resample_and_clean.py`**: A Python script that contains the code used by the GUI to resample and clean the extracted data. This script is called by the main.py script when the user uses the "Resample and Clean Data" function in the GUI.
-* **`dashboard.py`**: A Python script that contains the code used by the GUI to create a dashboard to visualize the extracted and cleaned data. This script is called by the main.py script when the user clicks the "Launch Dashboard" button in the GUI. 
+* **`GUI_launch.bat`**: A batch file that runs the GUI process data script. It's the only file that needs to be executed to start the GUI and start the application. 
+* **`GUI_launch.py`**: The main Python script that contains the code for the GUI. Basically the code that runs when you execute the GUI_launch.bat file.
+* **`extract_data.py`**: A Python script that contains the code used by the GUI to extract data from the input binary flight data file. This script is called by the GUI_launch.py script when the user uses the "Extract Data" function in the GUI.
+* **`resample_and_clean.py`**: A Python script that contains the code used by the GUI to resample and clean the extracted data. This script is called by the GUI_launch.py script when the user uses the "Resample and Clean Data" function in the GUI.
+* **`dashboard.py`**: A Python script that contains the code used by the GUI to create a dashboard to visualize the extracted and cleaned data. This script is called by the GUI_launch.py script when the user clicks the "Launch Dashboard" button in the GUI. 
 * **`data_utils.py`**: A Python script that contains utility functions used by the other scripts (e.g., `dashboard.py` or `resample_and_clean.py`) to process the data. This script is imported by the other scripts to use the functions defined in it. 
 * **`requirements.txt`**: A file that lists the required Python packages for the project. 
 * **`Processed Data/`**: A folder that contains the processed data files (e.g., extracted files, resampled files). This folder is the default output folder.
@@ -36,7 +40,7 @@
 * **`.streamlit/`**: A folder that contains the Streamlit configuration files for the dashboard. Mostly used to set the max upload size for the dashboard drag and drop functionality. 
 
 ## Deeper explanation of the main code files: <br/>
-### `main.py`
+### `GUI_launch.py`
 This file uses **Tkinter** for the UI and acts as the orchestrator for the project.
 
 #### 1. Architecture
@@ -50,7 +54,7 @@ This file uses **Tkinter** for the UI and acts as the orchestrator for the proje
 *   **`run_processing(self)`**: The background worker payload. It conditionally calls `extract_flight_data()` and `resample_and_clean_data()` based on UI flags.
 
 #### 3. Progress Tracking
-Since the data processing functions (extract_data.py, resample_and_clean.py) are designed as independent scripts that print to standard output, main.py uses a stdout-interception pattern to drive its progress bar.
+Since the data processing functions (extract_data.py, resample_and_clean.py) are designed as independent scripts that print to standard output, GUI_launch.py uses a stdout-interception pattern to drive its progress bar.
 *   **`capture_function_output(self, func, *args)`**: A wrapper function that temporarily redirects `sys.stdout`. It reads the output of the data functions line-by-line.
 *   **`parse_checkpoint_output(self, output_line)`**: Analyzes the intercepted strings to detect specific log formats (e.g., `[1/6]`).
 *   **ETA System (`start_eta_timer`, `update_eta_continuously`, `recalibrate_eta`)**: Uses hardcoded time estimates (`self.extract_expected_times`) for different processing steps. `update_eta_continuously()` is scheduled recursively using Tkinter's `root.after(1000, ...)` to smoothly interpolate the progress bar and ETA label even when stdout is quiet.
@@ -79,7 +83,7 @@ The main function pre-allocates large zero-filled NumPy arrays (`AD_NAVIGATION`,
 *   **Frequency Handling**: Different sensors sample at different frequencies. The script handles high-frequency data (like `MOTUSRAW` or `Pressures` at 1000Hz vs 100Hz baseline) by allocating $10 \times \text{line count}$ rows and using NumPy functions like `.repeat(10)` to synchronize slower timestamps alongside high-frequency sensor readings.
 
 #### 4. GUI Synchronization 
-*   **Checkpointing (`checkpoint`)**: Throughout the execution, the script prints specific formatted strings (like `[2/6] Processing AD_NAVIGATION...`). These are not just console logs; they are specifically designed to be intercepted by `main.py`'s `parse_checkpoint_output` to drive the GUI's progress bar and ETA calculations.
+*   **Checkpointing (`checkpoint`)**: Throughout the execution, the script prints specific formatted strings (like `[2/6] Processing AD_NAVIGATION...`). These are not just console logs; they are specifically designed to be intercepted by `GUI_launch.py`'s `parse_checkpoint_output` to drive the GUI's progress bar and ETA calculations.
 
 ### `resample_and_clean.py`
 This file takes the raw, extracted `.h5` datasets and normalizes them. Because different sensors on the aircraft log data at different, sometimes irregular frequencies (e.g., 25Hz, 100Hz, 1000Hz), this script interpolates everything onto uniform time grids and aggressively cleans noise and outliers.

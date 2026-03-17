@@ -623,10 +623,10 @@ class FlightDataProcessorGUI:
             self.root.destroy()
             sys.exit(0)
 
-def main():
+def GUI_launch():
     root = tk.Tk()
     app = FlightDataProcessorGUI(root)
     root.mainloop()
 
-if __name__ == '__main__':
-    main()
+if __name__ == '__GUI_launch__':
+    GUI_launch()
