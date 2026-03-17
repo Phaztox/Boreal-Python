@@ -1,15 +1,14 @@
 # Installation
-1. If you haven't already, download and install Python 3.10 or higher from the official website: `https://www.python.org/downloads/`
+1. If you haven't already, download and install Python 3.14 or higher from the official website: `https://www.python.org/downloads/`
    - Make sure to add Python to your system PATH during installation. This will allow you to run Python and pip from the command line.
-2. If you haven't already, download and install Git from the official website: `https://git-scm.com/downloads`
-   - This will allow you to clone the repository using Git.
-3. In the choosen directory, clone the repository using Git in the terminal: `git clone https://github.com/Phaztox/Borel-Python.git`
-4. Navigate to the project directory: `cd Borel-Python`
-5. Create a virtual environment: `python -m venv .venv`
-6. Activate the virtual environment:
+2. Download the project files:
+   - **Option A (Easiest):** Download this repository as a ZIP file (click the green `Code` button at the top of the GitHub page and select `Download ZIP`) and extract it to a folder of your choice.
+   - **Option B (For easy updates/developers):** If you have Git installed, clone the repository using your terminal: `git clone https://github.com/Phaztox/Boreal-Python.git` in the directory where you want the project to be located.
+3. Open a terminal and navigate to the extracted project directory. And create a virtual environment: `python -m venv .venv`
+4. Activate the virtual environment:
    - On Windows: `.venv\Scripts\activate`
    - On macOS/Linux: `source .venv/bin/activate`
-7. Install the required dependencies: `pip install -r requirements.txt`
+5. Install the required dependencies: `pip install -r requirements.txt`
 
 # Usage
 1. Run the GUI: `GUI_launch.bat` (Windows) or `python GUI_launch.py` (macOS/Linux)
