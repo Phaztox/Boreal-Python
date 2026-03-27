@@ -466,6 +466,12 @@ class FlightDataProcessorGUI:
             
             input_file = self.input_file_var.get()
             output_dir = self.output_dir_var.get()
+            
+            # Create output directory if it doesn't exist
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+                self.log_message(f"Created output directory: {output_dir}")
+                
             extracted_file = None
             
             # Run extract function if enabled
@@ -544,6 +550,10 @@ class FlightDataProcessorGUI:
         try:
             self.log_message("\n[INFO] Launching dashboard...")
             output_dir = self.output_dir_var.get()
+            
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+                self.log_message(f"Created output directory: {output_dir}")
             
             # Launch streamlit directly with the output directory as argument
             venv_python = os.path.join(os.getcwd(), ".venv", "Scripts", "python.exe")

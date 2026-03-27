@@ -39,7 +39,7 @@ def load_binary_data(file_path, offset1, offset2):
     return matrix, line_count
 
 
-def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='resultats_test'):
+def extract_flight_data(bin_file_path, offset1=1, offset2=0, output_dir='Processed Data'):
     """
     Extract flight data from binary file and save to HDF5 format.
     
