@@ -4,7 +4,8 @@
 2. Download the project files:
    - **Option A (Easiest):** Download this repository as a ZIP file (click the green `Code` button at the top of the GitHub page and select `Download ZIP`) and extract it to a folder of your choice.
    - **Option B (For easy updates/developers):** If you have Git installed, clone the repository using your terminal: `git clone https://github.com/Phaztox/Boreal-Python.git` in the directory where you want the project to be located.
-3. Open a terminal and navigate to the extracted project directory. And create a virtual environment: `py -3.14 -m venv .venv` (here, choose whichever version you downloaded/want to use)
+3. Navigate to the extracted project directory : `cd Boreal-Python`
+   And create a virtual environment: `py -3.14 -m venv .venv` (here, choose whichever version you downloaded/want to use, "3.14" is an example for Python 3.14).
 4. Activate the virtual environment:
    - On Windows: `.venv\Scripts\activate`
    - On macOS/Linux: `source .venv/bin/activate`
