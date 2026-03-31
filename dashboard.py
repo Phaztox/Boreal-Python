@@ -42,6 +42,14 @@ st.markdown("""
 st.title("UAV Data Browser")
 st.markdown("Interactive dashboard for exploring HDF5 flight data files")
 
+# Initialize row range filter session state
+if 'use_row_range' not in st.session_state:
+    st.session_state['use_row_range'] = False
+if 'range_start_row' not in st.session_state:
+    st.session_state['range_start_row'] = 0
+if 'range_end_row' not in st.session_state:
+    st.session_state['range_end_row'] = 0
+
 st.sidebar.header("File Selection")
 
 # --- Directory selection ---
@@ -124,6 +132,65 @@ if file_path is not None:
         
         st.sidebar.success(f"{len(datasets)} datasets found")
         
+        # --- Row Range Filter ---
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("#### Row Range Filter")
+        use_row_range = st.sidebar.checkbox("Enable row range selection", value=st.session_state['use_row_range'], key="toggle_row_range")
+        st.session_state['use_row_range'] = use_row_range
+        
+        if use_row_range:
+            # Get the max row count from all datasets
+            max_rows = max([info['shape'][0] for info in dataset_info.values()])
+            
+            col_start, col_end = st.sidebar.columns(2)
+            with col_start:
+                start_row = st.number_input(
+                    "Start row",
+                    min_value=0,
+                    max_value=max_rows - 1,
+                    value=st.session_state['range_start_row'],
+                    key="range_start_input"
+                )
+                st.session_state['range_start_row'] = start_row
+            
+            with col_end:
+                end_row = st.number_input(
+                    "End row",
+                    min_value=start_row + 1,
+                    max_value=max_rows,
+                    value=min(st.session_state['range_end_row'] if st.session_state['range_end_row'] > 0 else max_rows, max_rows),
+                    key="range_end_input"
+                )
+                st.session_state['range_end_row'] = end_row
+            
+            base_rows = end_row - start_row
+            st.sidebar.info(f"Standard datasets: **{start_row:,}** to **{end_row:,}** ({base_rows:,} rows)\n\nLarge datasets (10×): **{start_row*10:,}** to **{end_row*10:,}** ({base_rows*10:,} rows)")
+            st.sidebar.caption("Large datasets: Resampled_MOTUSRAW, Pressures, MOTUSRAW")
+        
+        # Helper function to detect if dataset has 10x more rows
+        def is_large_dataset(dataset_name):
+            """Check if dataset is one of the large datasets with 10x rows"""
+            large_dataset_names = ["Resampled_MOTUSRAW", "Pressures", "MOTUSRAW"]
+            # Exclude "Resampled_Pressures"
+            if "Resampled_Pressures" in dataset_name:
+                return False
+            return any(name in dataset_name for name in large_dataset_names)
+        
+        # Helper function to apply row range filter
+        def apply_row_range(df, dataset_name=None):
+            """Apply row range filter if enabled. Scales for large datasets (10x rows)"""
+            if st.session_state['use_row_range']:
+                start = st.session_state['range_start_row']
+                end = st.session_state['range_end_row']
+                
+                # Scale indices for large datasets
+                if dataset_name and is_large_dataset(dataset_name):
+                    start = start * 10
+                    end = end * 10
+                
+                return df.iloc[start:end].reset_index(drop=True)
+            return df
+        
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "Data Explorer", "Visualization", "Spectrum Analysis", "Statistics"])
         
         # Overview tab
@@ -133,9 +200,19 @@ if file_path is not None:
             overview_data = []
             for name, info in dataset_info.items():
                 num_cols = info['shape'][1] if len(info['shape']) > 1 else 1
+                # Calculate row count considering row range filter
+                row_count = info['shape'][0]
+                if st.session_state['use_row_range']:
+                    start = st.session_state['range_start_row']
+                    end = st.session_state['range_end_row']
+                    # Scale for large datasets
+                    if is_large_dataset(name):
+                        row_count = max(0, (end * 10) - (start * 10))
+                    else:
+                        row_count = max(0, end - start)
                 overview_data.append({
                     'Dataset': name,
-                    'Rows': f"{info['shape'][0]:,}",
+                    'Rows': f"{row_count:,}",
                     'Columns': num_cols,
                     'Size (MB)': f"{info['size_mb']:.2f}",
                     'Type': str(info['dtype'])
@@ -146,7 +223,18 @@ if file_path is not None:
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                total_rows = sum([info['shape'][0] for info in dataset_info.values()])
+                # Calculate total rows considering the filter
+                total_rows = 0
+                if st.session_state['use_row_range']:
+                    base_rows = st.session_state['range_end_row'] - st.session_state['range_start_row']
+                    total_rows = 0
+                    for name in dataset_info.keys():
+                        if is_large_dataset(name):
+                            total_rows += base_rows * 10
+                        else:
+                            total_rows += base_rows
+                else:
+                    total_rows = sum([info['shape'][0] for info in dataset_info.values()])
                 st.metric("Total Rows", f"{total_rows:,}")
             with col2:
                 total_size = sum([info['size_mb'] for info in dataset_info.values()])
@@ -158,11 +246,26 @@ if file_path is not None:
             for dataset_name in datasets:
                 with st.expander(f"{dataset_name}"):
                     info = dataset_info[dataset_name]
+                    # Calculate row count considering row range filter
+                    display_rows = info['shape'][0]
+                    if st.session_state['use_row_range']:
+                        start = st.session_state['range_start_row']
+                        end = st.session_state['range_end_row']
+                        # Scale for large datasets
+                        if is_large_dataset(dataset_name):
+                            display_rows = max(0, (end * 10) - (start * 10))
+                        else:
+                            display_rows = max(0, end - start)
+                    
                     col1, col2, col3 = st.columns(3)
-                    col1.metric("Rows", f"{info['shape'][0]:,}")
+                    col1.metric("Rows", f"{display_rows:,}")
                     num_cols = info['shape'][1] if len(info['shape']) > 1 else 1
                     col2.metric("Columns", num_cols)
                     col3.metric("Size", f"{info['size_mb']:.2f} MB")
+                    
+                    # Show if this is a large dataset
+                    if is_large_dataset(dataset_name):
+                        st.info("This dataset has 10× more rows than standard datasets")
                     
                     with h5py.File(file_path, 'r') as hf:
                         label_key = f'{dataset_name}_label' if f'{dataset_name}_label' in hf.attrs else f'{dataset_name}_LABEL'
@@ -180,6 +283,7 @@ if file_path is not None:
             selected_dataset = st.selectbox("Select dataset to explore:", datasets)
             with st.spinner(f"Loading {selected_dataset}..."):
                 df = get_dataframe(file_path, selected_dataset)
+                df = apply_row_range(df)
             
             st.success(f"Loaded {len(df):,} rows × {len(df.columns)} columns")
             
@@ -259,6 +363,7 @@ if file_path is not None:
                 
                 with st.spinner(f"Loading {viz_dataset}..."):
                     df_viz = get_dataframe(file_path, viz_dataset)
+                    df_viz = apply_row_range(df_viz, viz_dataset)
                 
                 if len(df_viz) == 0:
                     st.error("Dataset is empty. Cannot create visualization.")
@@ -417,6 +522,7 @@ if file_path is not None:
                     x_dataset = st.selectbox("X-axis dataset:", datasets, index=0, key="x_dataset")
                 with col2:
                     df_x = get_dataframe(file_path, x_dataset)
+                    df_x = apply_row_range(df_x, x_dataset)
                     numeric_cols_x = df_x.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                     x_axis_3d = st.selectbox("X-axis parameter:", numeric_cols_x, index=0, key="x_param")
                 
@@ -426,6 +532,7 @@ if file_path is not None:
                     y_dataset = st.selectbox("Y-axis dataset:", datasets, index=0, key="y_dataset")
                 with col2:
                     df_y = get_dataframe(file_path, y_dataset)
+                    df_y = apply_row_range(df_y, y_dataset)
                     numeric_cols_y = df_y.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                     y_axis_3d = st.selectbox("Y-axis parameter:", numeric_cols_y, 
                                             index=min(1, len(numeric_cols_y)-1) if y_dataset == x_dataset else 0, 
@@ -437,6 +544,7 @@ if file_path is not None:
                     z_dataset = st.selectbox("Z-axis dataset:", datasets, index=0, key="z_dataset")
                 with col2:
                     df_z = get_dataframe(file_path, z_dataset)
+                    df_z = apply_row_range(df_z, z_dataset)
                     numeric_cols_z = df_z.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                     z_axis_3d = st.selectbox("Z-axis parameter:", numeric_cols_z, 
                                             index=min(2, len(numeric_cols_z)-1) if z_dataset == x_dataset else 0, 
@@ -449,6 +557,7 @@ if file_path is not None:
                     if use_color_gradient:
                         color_dataset = st.selectbox("Color dataset:", datasets, index=0, key="color_dataset")
                         df_color = get_dataframe(file_path, color_dataset)
+                        df_color = apply_row_range(df_color, color_dataset)
                         numeric_cols_color = df_color.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                         color_var_3d = st.selectbox("Color by:", numeric_cols_color, 
                                                    index=min(2, len(numeric_cols_color)-1) if color_dataset == x_dataset else 0, 
@@ -681,6 +790,7 @@ if file_path is not None:
             
             with col2:
                 df_spectrum = get_dataframe(file_path, spectrum_dataset)
+                df_spectrum = apply_row_range(df_spectrum, spectrum_dataset)
                 numeric_cols_spectrum = df_spectrum.select_dtypes(include=['float64', 'float32', 'int64', 'int32', 'int16', 'uint16']).columns.tolist()
                 if not numeric_cols_spectrum:
                     st.error("No numeric columns found in selected dataset")
@@ -996,6 +1106,7 @@ if file_path is not None:
             stats_dataset = st.selectbox("Select dataset:", datasets, key="stats_dataset")
             with st.spinner(f"Loading {stats_dataset}..."):
                 df_stats = get_dataframe(file_path, stats_dataset)
+                df_stats = apply_row_range(df_stats, stats_dataset)
             
             if len(df_stats) == 0:
                 st.error("Dataset is empty. No statistics to display.")
