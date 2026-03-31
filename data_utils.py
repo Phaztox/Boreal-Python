@@ -281,28 +281,3 @@ def interactive_browser(filename):
             print("\nExiting browser...\n")
             break
 
-
-# Example usage in main script:
-if __name__ == '__main__':
-    # Example H5 file path
-    h5_file = 'resultats_test/MomentaVol5_clean_extracted.h5'
-    
-    # Browse the file (shows all datasets)
-    # browse_h5_file(h5_file)
-    
-    # Preview a specific dataset
-    # preview_dataset(h5_file, 'AD_NAVIGATION', rows=10)
-    
-    # Search for columns
-    # search_columns(h5_file, 'pressure')
-    
-    # Get statistics
-    # get_column_statistics(h5_file, 'AD_NAVIGATION', 'Height')
-    
-    # Interactive browser
-    # interactive_browser(h5_file)
-    
-    # Export to CSV
-    # export_dataset_to_csv(h5_file, 'AD_NAVIGATION', 'AD_NAVIGATION_export.csv')
-    
-    pass
