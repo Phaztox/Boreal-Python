@@ -14,6 +14,7 @@ import h5py
 import streamlit.components.v1 as components
 import numpy as np
 from scipy.signal import welch, windows, bessel, filtfilt
+from pathlib import Path
 
 st.set_page_config(
     page_title="UAV Data Browser",
@@ -49,6 +50,235 @@ if 'range_start_row' not in st.session_state:
     st.session_state['range_start_row'] = 0
 if 'range_end_row' not in st.session_state:
     st.session_state['range_end_row'] = 0
+if 'detected_sequences' not in st.session_state:
+    st.session_state['detected_sequences'] = []
+if 'sequence_source_dataset' not in st.session_state:
+    st.session_state['sequence_source_dataset'] = None
+if 'sequence_detection_params' not in st.session_state:
+    st.session_state['sequence_detection_params'] = {}
+if 'pending_row_range_from_sequence' not in st.session_state:
+    st.session_state['pending_row_range_from_sequence'] = None
+
+
+def decode_h5_labels(label_values):
+    """Decode HDF5 attribute labels into plain Python strings."""
+    decoded = []
+    for value in label_values:
+        if isinstance(value, bytes):
+            decoded.append(value.decode('utf-8'))
+        else:
+            decoded.append(str(value))
+    return decoded
+
+
+def pick_column_name(column_names, include_tokens, exclude_tokens=None, preferred_exact=None):
+    """Pick the best matching column name from a list of candidates."""
+    exclude_tokens = exclude_tokens or []
+    normalized = {name: str(name).lower() for name in column_names}
+
+    if preferred_exact:
+        for candidate in column_names:
+            lowered = normalized[candidate]
+            if lowered == preferred_exact.lower():
+                return candidate
+
+    for candidate in column_names:
+        lowered = normalized[candidate]
+        if any(token in lowered for token in include_tokens) and not any(token in lowered for token in exclude_tokens):
+            return candidate
+
+    return None
+
+
+def infer_flight_columns(column_names):
+    """Infer latitude/longitude/roll/height columns from dataset labels."""
+    lat_col = pick_column_name(column_names, include_tokens=['latitude'])
+    lon_col = pick_column_name(column_names, include_tokens=['longitude'])
+    roll_col = pick_column_name(
+        column_names,
+        include_tokens=['roll'],
+        exclude_tokens=['std', 'deviation']
+    )
+    height_col = pick_column_name(
+        column_names,
+        include_tokens=['height'],
+        exclude_tokens=['std', 'deviation'],
+        preferred_exact='height'
+    )
+
+    if not all([lat_col, lon_col, roll_col, height_col]):
+        return None
+
+    return {
+        'latitude': lat_col,
+        'longitude': lon_col,
+        'roll': roll_col,
+        'height': height_col,
+    }
+
+
+def detect_straight_sequences(
+    df,
+    lat_col,
+    lon_col,
+    roll_col,
+    height_col,
+    max_roll_deg,
+    max_heading_change_deg,
+    min_height,
+    max_height,
+    min_sequence_len,
+    max_gap_to_merge=0,
+):
+    """Detect straight-flight sequences based on heading stability, roll, and altitude."""
+    lat = pd.to_numeric(df[lat_col], errors='coerce').to_numpy(dtype=np.float64)
+    lon = pd.to_numeric(df[lon_col], errors='coerce').to_numpy(dtype=np.float64)
+    roll = pd.to_numeric(df[roll_col], errors='coerce').to_numpy(dtype=np.float64)
+    height = pd.to_numeric(df[height_col], errors='coerce').to_numpy(dtype=np.float64)
+
+    valid = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(roll) & np.isfinite(height)
+    if valid.sum() < max(10, min_sequence_len):
+        return [], np.zeros(len(df), dtype=bool), {'valid_points': int(valid.sum())}
+
+    lat_finite = lat[valid]
+    lon_finite = lon[valid]
+    use_degrees = (np.nanmax(np.abs(lat_finite)) > (np.pi + 0.2)) or (np.nanmax(np.abs(lon_finite)) > (2 * np.pi + 0.2))
+
+    if use_degrees:
+        lat_rad = np.deg2rad(lat)
+        lon_rad = np.deg2rad(lon)
+    else:
+        lat_rad = lat
+        lon_rad = lon
+
+    if np.nanmax(np.abs(roll[valid])) <= (np.pi + 0.2):
+        roll_deg = np.rad2deg(roll)
+    else:
+        roll_deg = roll
+
+    lat_ref = np.nanmedian(lat_rad[valid])
+    x = lon_rad * np.cos(lat_ref)
+    y = lat_rad
+
+    dx = np.gradient(x)
+    dy = np.gradient(y)
+    heading = np.unwrap(np.arctan2(dy, dx))
+    heading_change_deg = np.degrees(np.abs(np.gradient(heading)))
+
+    roll_abs = np.abs(roll_deg)
+
+    straight_mask = (
+        valid
+        & (roll_abs <= float(max_roll_deg))
+        & (heading_change_deg <= float(max_heading_change_deg))
+        & (height >= float(min_height))
+        & (height <= float(max_height))
+    )
+
+    # Optional gap bridging: join straight segments separated by short interruptions.
+    gap_rows = max(0, int(max_gap_to_merge))
+    if gap_rows > 0 and np.any(straight_mask):
+        merged_mask = straight_mask.copy()
+        idx = 0
+        total_len = len(merged_mask)
+        while idx < total_len:
+            if merged_mask[idx]:
+                idx += 1
+                continue
+
+            gap_start = idx
+            while idx < total_len and not merged_mask[idx]:
+                idx += 1
+            gap_end = idx
+
+            left_is_straight = gap_start > 0 and merged_mask[gap_start - 1]
+            right_is_straight = gap_end < total_len and merged_mask[gap_end]
+            if left_is_straight and right_is_straight and (gap_end - gap_start) <= gap_rows:
+                merged_mask[gap_start:gap_end] = True
+
+        straight_mask = merged_mask
+
+    padded = np.concatenate(([False], straight_mask, [False]))
+    changes = np.diff(padded.astype(np.int8))
+    starts = np.where(changes == 1)[0]
+    ends = np.where(changes == -1)[0] - 1
+
+    sequences = []
+    min_len = int(min_sequence_len)
+    seq_id = 1
+    for start_idx, end_idx in zip(starts, ends):
+        length = int(end_idx - start_idx + 1)
+        if length < min_len:
+            continue
+        sequences.append({
+            'sequence_id': seq_id,
+            'start_row': int(start_idx),
+            'end_row': int(end_idx),
+            'length_rows': length,
+            'mean_abs_roll_deg': float(np.nanmean(roll_abs[start_idx:end_idx + 1])),
+            'mean_heading_change_deg': float(np.nanmean(heading_change_deg[start_idx:end_idx + 1])),
+            'min_height': float(np.nanmin(height[start_idx:end_idx + 1])),
+            'max_height': float(np.nanmax(height[start_idx:end_idx + 1])),
+        })
+        seq_id += 1
+
+    diagnostics = {
+        'valid_points': int(valid.sum()),
+        'straight_points': int(straight_mask.sum()),
+        'roll_unit': 'rad->deg' if np.nanmax(np.abs(roll[valid])) <= (np.pi + 0.2) else 'deg',
+        'geo_unit': 'deg->rad' if use_degrees else 'rad',
+        'max_gap_to_merge': int(gap_rows),
+    }
+    return sequences, straight_mask, diagnostics
+
+
+def export_sequences_to_h5(input_h5_path, output_dir, sequence_rows, is_large_dataset_fn, detection_params):
+    """Export detected flight sequences to a new HDF5 file with per-sequence datasets."""
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, f"{Path(input_h5_path).stem}_straight_sequences.h5")
+
+    with h5py.File(input_h5_path, 'r') as src_h5, h5py.File(output_file, 'w') as out_h5:
+        seq_matrix = np.array([
+            [seq['sequence_id'], seq['start_row'], seq['end_row'], seq['length_rows']]
+            for seq in sequence_rows
+        ], dtype=np.int64)
+        out_h5.create_dataset('DetectedSequences', data=seq_matrix, compression='gzip', compression_opts=4)
+        out_h5.attrs['DetectedSequences_label'] = np.array(['SequenceID', 'StartRow', 'EndRow', 'LengthRows'], dtype='S')
+
+        for param_key, param_val in detection_params.items():
+            out_h5.attrs[f'detector_{param_key}'] = str(param_val)
+
+        for dataset_name in src_h5.keys():
+            dataset = src_h5[dataset_name]
+            if not isinstance(dataset, h5py.Dataset):
+                continue
+
+            data = dataset[:]
+            total_rows = len(data)
+            if total_rows == 0:
+                continue
+
+            label_key = f'{dataset_name}_label' if f'{dataset_name}_label' in src_h5.attrs else f'{dataset_name}_LABEL'
+            labels = src_h5.attrs[label_key] if label_key in src_h5.attrs else None
+
+            row_scale = 10 if is_large_dataset_fn(dataset_name) else 1
+
+            for seq in sequence_rows:
+                seq_start = int(seq['start_row']) * row_scale
+                seq_end_exclusive = (int(seq['end_row']) + 1) * row_scale
+                seq_start = max(0, min(seq_start, total_rows))
+                seq_end_exclusive = max(0, min(seq_end_exclusive, total_rows))
+                if seq_end_exclusive <= seq_start:
+                    continue
+
+                seq_data = data[seq_start:seq_end_exclusive]
+                seq_dataset_name = f"SEQ{int(seq['sequence_id']):03d}_{dataset_name}"
+                out_h5.create_dataset(seq_dataset_name, data=seq_data, compression='gzip', compression_opts=4)
+
+                if labels is not None:
+                    out_h5.attrs[f'{seq_dataset_name}_label'] = labels
+
+    return output_file
 
 st.sidebar.header("File Selection")
 
@@ -123,6 +353,9 @@ if file_path is not None:
             del st.session_state[key]
         st.session_state['last_selected_file'] = current_file_id
         st.session_state['last_viz_dataset'] = None
+        st.session_state['detected_sequences'] = []
+        st.session_state['sequence_source_dataset'] = None
+        st.session_state['sequence_detection_params'] = {}
     
     file_size = os.path.getsize(file_path) / (1024**2)
     st.sidebar.metric("File Size", f"{file_size:.1f} MB")
@@ -131,6 +364,18 @@ if file_path is not None:
         dataset_info = get_dataset_info(file_path)
         
         st.sidebar.success(f"{len(datasets)} datasets found")
+
+        # Apply deferred row-range import before widgets are created.
+        pending_row_range = st.session_state.pop('pending_row_range_from_sequence', None)
+        if pending_row_range is not None:
+            imported_start = int(pending_row_range['start'])
+            imported_end = int(pending_row_range['end'])
+            st.session_state['use_row_range'] = True
+            st.session_state['toggle_row_range'] = True
+            st.session_state['range_start_row'] = imported_start
+            st.session_state['range_end_row'] = imported_end
+            st.session_state['range_start_input'] = imported_start
+            st.session_state['range_end_input'] = imported_end
         
         # --- Row Range Filter ---
         st.sidebar.markdown("---")
@@ -169,29 +414,63 @@ if file_path is not None:
         
         # Helper function to detect if dataset has 10x more rows
         def is_large_dataset(dataset_name):
-            """Check if dataset is one of the large datasets with 10x rows"""
+            """Check if dataset is one of the large datasets with 10x rows."""
             large_dataset_names = ["Resampled_MOTUSRAW", "Pressures", "MOTUSRAW"]
-            # Exclude "Resampled_Pressures"
             if "Resampled_Pressures" in dataset_name:
                 return False
             return any(name in dataset_name for name in large_dataset_names)
-        
-        # Helper function to apply row range filter
-        def apply_row_range(df, dataset_name=None):
-            """Apply row range filter if enabled. Scales for large datasets (10x rows)"""
+
+        def get_dataset_label_columns(h5_path, dataset_name):
+            """Return decoded label columns from HDF5 attrs if they exist."""
+            with h5py.File(h5_path, 'r') as hf:
+                label_key = f'{dataset_name}_label' if f'{dataset_name}_label' in hf.attrs else f'{dataset_name}_LABEL'
+                if label_key in hf.attrs:
+                    return decode_h5_labels(hf.attrs[label_key])
+            return None
+
+        def get_scale(dataset_name):
+            return 10 if is_large_dataset(dataset_name) else 1
+
+        def get_filtered_row_count(dataset_name, total_rows):
+            """Compute row count after applying row-range only."""
+            if total_rows <= 0:
+                return 0
+
+            scale = get_scale(dataset_name)
+            range_start = 0
+            range_end = total_rows
+
             if st.session_state['use_row_range']:
-                start = st.session_state['range_start_row']
-                end = st.session_state['range_end_row']
-                
-                # Scale indices for large datasets
+                range_start = int(st.session_state['range_start_row']) * scale
+                range_end = int(st.session_state['range_end_row']) * scale
+                range_start = max(0, min(range_start, total_rows))
+                range_end = max(range_start, min(range_end, total_rows))
+
+            return max(0, range_end - range_start)
+
+        # Helper function to apply row range only
+        def apply_row_range(df, dataset_name=None):
+            """Apply active row-range filter."""
+            filtered = df
+
+            if st.session_state['use_row_range']:
+                start = int(st.session_state['range_start_row'])
+                end = int(st.session_state['range_end_row'])
                 if dataset_name and is_large_dataset(dataset_name):
-                    start = start * 10
-                    end = end * 10
-                
-                return df.iloc[start:end].reset_index(drop=True)
-            return df
-        
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "Data Explorer", "Visualization", "Spectrum Analysis", "Statistics"])
+                    start *= 10
+                    end *= 10
+                filtered = filtered.iloc[start:end]
+
+            return filtered.reset_index(drop=True)
+
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            "Overview",
+            "Data Explorer",
+            "Visualization",
+            "Spectrum Analysis",
+            "Statistics",
+            "Straight Flight Detector"
+        ])
         
         # Overview tab
         with tab1:
@@ -200,16 +479,7 @@ if file_path is not None:
             overview_data = []
             for name, info in dataset_info.items():
                 num_cols = info['shape'][1] if len(info['shape']) > 1 else 1
-                # Calculate row count considering row range filter
-                row_count = info['shape'][0]
-                if st.session_state['use_row_range']:
-                    start = st.session_state['range_start_row']
-                    end = st.session_state['range_end_row']
-                    # Scale for large datasets
-                    if is_large_dataset(name):
-                        row_count = max(0, (end * 10) - (start * 10))
-                    else:
-                        row_count = max(0, end - start)
+                row_count = get_filtered_row_count(name, int(info['shape'][0]))
                 overview_data.append({
                     'Dataset': name,
                     'Rows': f"{row_count:,}",
@@ -223,18 +493,7 @@ if file_path is not None:
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                # Calculate total rows considering the filter
-                total_rows = 0
-                if st.session_state['use_row_range']:
-                    base_rows = st.session_state['range_end_row'] - st.session_state['range_start_row']
-                    total_rows = 0
-                    for name in dataset_info.keys():
-                        if is_large_dataset(name):
-                            total_rows += base_rows * 10
-                        else:
-                            total_rows += base_rows
-                else:
-                    total_rows = sum([info['shape'][0] for info in dataset_info.values()])
+                total_rows = sum(get_filtered_row_count(name, int(info['shape'][0])) for name, info in dataset_info.items())
                 st.metric("Total Rows", f"{total_rows:,}")
             with col2:
                 total_size = sum([info['size_mb'] for info in dataset_info.values()])
@@ -246,16 +505,7 @@ if file_path is not None:
             for dataset_name in datasets:
                 with st.expander(f"{dataset_name}"):
                     info = dataset_info[dataset_name]
-                    # Calculate row count considering row range filter
-                    display_rows = info['shape'][0]
-                    if st.session_state['use_row_range']:
-                        start = st.session_state['range_start_row']
-                        end = st.session_state['range_end_row']
-                        # Scale for large datasets
-                        if is_large_dataset(dataset_name):
-                            display_rows = max(0, (end * 10) - (start * 10))
-                        else:
-                            display_rows = max(0, end - start)
+                    display_rows = get_filtered_row_count(dataset_name, int(info['shape'][0]))
                     
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Rows", f"{display_rows:,}")
@@ -267,14 +517,10 @@ if file_path is not None:
                     if is_large_dataset(dataset_name):
                         st.info("This dataset has 10× more rows than standard datasets")
                     
-                    with h5py.File(file_path, 'r') as hf:
-                        label_key = f'{dataset_name}_label' if f'{dataset_name}_label' in hf.attrs else f'{dataset_name}_LABEL'
-                        if label_key in hf.attrs:
-                            columns = hf.attrs[label_key]
-                            if isinstance(columns[0], bytes):
-                                columns = [col.decode('utf-8') if isinstance(col, bytes) else col for col in columns]
-                            st.write("**Columns:**")
-                            st.text(", ".join(columns))
+                    columns = get_dataset_label_columns(file_path, dataset_name)
+                    if columns:
+                        st.write("**Columns:**")
+                        st.text(", ".join(columns))
         
         # Data explorer tab
         with tab2:
@@ -283,7 +529,7 @@ if file_path is not None:
             selected_dataset = st.selectbox("Select dataset to explore:", datasets)
             with st.spinner(f"Loading {selected_dataset}..."):
                 df = get_dataframe(file_path, selected_dataset)
-                df = apply_row_range(df)
+                df = apply_row_range(df, selected_dataset)
             
             st.success(f"Loaded {len(df):,} rows × {len(df.columns)} columns")
             
@@ -1140,6 +1386,436 @@ if file_path is not None:
                     st.plotly_chart(fig, width='stretch')
                 else:
                     st.warning("No numeric columns found for statistics")
+
+        # Straight Flight Detector tab
+        with tab6:
+            st.header("Straight Flight Sequence Detector")
+            st.markdown(
+                "Detect straight segments using latitude/longitude trajectory stability, roll angle, and altitude bounds. "
+                "Detected sequences can be applied globally to all tabs and exported to a dedicated HDF5 file."
+            )
+
+            dataset_columns_map = {}
+            candidate_datasets = []
+            for ds_name in datasets:
+                ds_cols = get_dataset_label_columns(file_path, ds_name)
+                if ds_cols:
+                    dataset_columns_map[ds_name] = ds_cols
+                    if infer_flight_columns(ds_cols):
+                        candidate_datasets.append(ds_name)
+
+            detector_dataset = st.selectbox(
+                "Dataset used for sequence detection:",
+                candidate_datasets if candidate_datasets else datasets,
+                index=0,
+                key='detector_dataset'
+            )
+
+            detector_columns = dataset_columns_map.get(detector_dataset)
+            if not detector_columns:
+                with st.spinner(f"Loading {detector_dataset} columns..."):
+                    detector_columns = get_dataframe(file_path, detector_dataset).columns.tolist()
+
+            inferred_cols = infer_flight_columns(detector_columns) or {}
+
+            col_map1, col_map2, col_map3, col_map4 = st.columns(4)
+            with col_map1:
+                lat_col = st.selectbox(
+                    "Latitude column",
+                    detector_columns,
+                    index=detector_columns.index(inferred_cols['latitude']) if 'latitude' in inferred_cols else 0,
+                    key='detector_lat_col'
+                )
+            with col_map2:
+                lon_col = st.selectbox(
+                    "Longitude column",
+                    detector_columns,
+                    index=detector_columns.index(inferred_cols['longitude']) if 'longitude' in inferred_cols else min(1, len(detector_columns) - 1),
+                    key='detector_lon_col'
+                )
+            with col_map3:
+                roll_col = st.selectbox(
+                    "Roll column",
+                    detector_columns,
+                    index=detector_columns.index(inferred_cols['roll']) if 'roll' in inferred_cols else min(2, len(detector_columns) - 1),
+                    key='detector_roll_col'
+                )
+            with col_map4:
+                height_col = st.selectbox(
+                    "Height column",
+                    detector_columns,
+                    index=detector_columns.index(inferred_cols['height']) if 'height' in inferred_cols else min(3, len(detector_columns) - 1),
+                    key='detector_height_col'
+                )
+
+            last_params = st.session_state.get('sequence_detection_params', {})
+            default_hmin = float(last_params.get('min_height', 100.0))
+            default_hmax = float(last_params.get('max_height', 300.0))
+            if default_hmax <= default_hmin:
+                default_hmax = default_hmin + 1.0
+
+            st.markdown("#### Detection Parameters")
+            p1, p2, p3 = st.columns(3)
+            with p1:
+                max_roll_deg = st.number_input(
+                    "Max absolute roll angle (deg)",
+                    min_value=0.0,
+                    max_value=90.0,
+                    value=10.0,
+                    step=0.5,
+                    key='detector_max_roll',
+                    help="Absolute limit: rows are kept only if abs(roll) <= this threshold."
+                )
+                max_heading_change_deg = st.number_input(
+                    "Max absolute heading-change (deg/sample)",
+                    min_value=0.0,
+                    max_value=45.0,
+                    value=5.0,
+                    step=0.1,
+                    key='detector_max_heading',
+                    help="Absolute limit: rows are kept only if abs(heading change) <= this threshold."
+                )
+            with p2:
+                min_height = st.number_input("Min height", value=default_hmin, step=1.0, key='detector_min_height')
+                max_height = st.number_input("Max height", value=default_hmax, step=1.0, key='detector_max_height')
+            with p3:
+                min_sequence_len = st.number_input("Min sequence length (rows)", min_value=10, max_value=1_000_000, value=2000, step=10, key='detector_min_len')
+
+            p4, p5 = st.columns(2)
+            with p4:
+                max_gap_to_merge = st.number_input(
+                    "Merge gaps up to (rows)",
+                    min_value=0,
+                    max_value=10000,
+                    value=int(last_params.get('max_gap_to_merge', 100)),
+                    step=1,
+                    key='detector_max_gap_merge',
+                    help="If two straight segments are separated by a short non-straight gap, merge them into one longer sequence."
+                )
+            with p5:
+                keep_n_longest = st.number_input(
+                    "Keep N longest sequences (0 = all)",
+                    min_value=0,
+                    max_value=1000,
+                    value=int(last_params.get('keep_n_longest', 0)),
+                    step=1,
+                    key='detector_keep_n_longest',
+                    help="Prioritize long straight segments by keeping only the longest N after detection."
+                )
+
+            apply_range_before_detection = st.checkbox(
+                "Apply current row-range selection before detection",
+                value=st.session_state['use_row_range'],
+                key='detector_apply_row_range'
+            )
+
+            if min_height > max_height:
+                st.error("Min height must be <= max height.")
+
+            detect_btn_col, export_btn_col = st.columns(2)
+            with detect_btn_col:
+                detect_clicked = st.button("Detect Straight Sequences", type='primary', key='detect_straight_sequences_btn')
+            with export_btn_col:
+                export_output_dir = st.text_input(
+                    "Export folder",
+                    value=results_dir,
+                    key='sequence_export_dir'
+                )
+                export_clicked = st.button("Export Sequences to HDF5", key='export_sequences_btn')
+
+            if detect_clicked and min_height <= max_height:
+                with st.spinner("Detecting straight-flight sequences..."):
+                    detector_df = get_dataframe(file_path, detector_dataset)
+                    detector_scale = get_scale(detector_dataset)
+                    row_offset = 0
+
+                    if apply_range_before_detection and st.session_state['use_row_range']:
+                        range_start = int(st.session_state['range_start_row']) * detector_scale
+                        range_end = int(st.session_state['range_end_row']) * detector_scale
+                        detector_df = detector_df.iloc[range_start:range_end].reset_index(drop=True)
+                        row_offset = range_start
+
+                    sequences_local, _, diagnostics = detect_straight_sequences(
+                        detector_df,
+                        lat_col=lat_col,
+                        lon_col=lon_col,
+                        roll_col=roll_col,
+                        height_col=height_col,
+                        max_roll_deg=max_roll_deg,
+                        max_heading_change_deg=max_heading_change_deg,
+                        min_height=min_height,
+                        max_height=max_height,
+                        min_sequence_len=min_sequence_len,
+                        max_gap_to_merge=max_gap_to_merge,
+                    )
+
+                    sequences_global = []
+                    for seq in sequences_local:
+                        start_src = row_offset + int(seq['start_row'])
+                        end_src = row_offset + int(seq['end_row'])
+                        start_base = start_src // detector_scale
+                        end_base = end_src // detector_scale
+                        sequences_global.append({
+                            'sequence_id': int(seq['sequence_id']),
+                            'start_row': int(start_base),
+                            'end_row': int(end_base),
+                            'length_rows': int(end_base - start_base + 1),
+                            'mean_abs_roll_deg': float(seq['mean_abs_roll_deg']),
+                            'mean_heading_change_deg': float(seq['mean_heading_change_deg']),
+                            'min_height': float(seq['min_height']),
+                            'max_height': float(seq['max_height']),
+                        })
+
+                    # Prioritize longer segments when requested.
+                    sequences_global = sorted(sequences_global, key=lambda s: s['length_rows'], reverse=True)
+                    if int(keep_n_longest) > 0:
+                        sequences_global = sequences_global[:int(keep_n_longest)]
+
+                    # Renumber sequence IDs after optional longest-only selection.
+                    for idx, seq in enumerate(sequences_global, start=1):
+                        seq['sequence_id'] = idx
+
+                    st.session_state['detected_sequences'] = sequences_global
+                    st.session_state['sequence_source_dataset'] = detector_dataset
+                    st.session_state['sequence_detection_params'] = {
+                        'dataset': detector_dataset,
+                        'latitude_col': lat_col,
+                        'longitude_col': lon_col,
+                        'roll_col': roll_col,
+                        'height_col': height_col,
+                        'max_roll_deg': max_roll_deg,
+                        'max_heading_change_deg': max_heading_change_deg,
+                        'min_height': min_height,
+                        'max_height': max_height,
+                        'min_sequence_len': min_sequence_len,
+                        'max_gap_to_merge': int(max_gap_to_merge),
+                        'keep_n_longest': int(keep_n_longest),
+                        'apply_range_before_detection': apply_range_before_detection,
+                        'valid_points': diagnostics.get('valid_points', 0),
+                        'straight_points': diagnostics.get('straight_points', 0),
+                        'roll_unit': diagnostics.get('roll_unit', 'unknown'),
+                        'geo_unit': diagnostics.get('geo_unit', 'unknown'),
+                    }
+
+                    if sequences_global:
+                        kept_msg = f" (kept top {int(keep_n_longest)} longest)" if int(keep_n_longest) > 0 else ""
+                        st.success(
+                            f"Detected {len(sequences_global)} straight sequence(s){kept_msg}."
+                        )
+                    else:
+                        st.warning("No straight sequences matched the current parameters.")
+
+            current_sequences = st.session_state.get('detected_sequences', [])
+            if current_sequences:
+                st.markdown("#### Trajectory Verification")
+                source_dataset_for_plot = st.session_state.get('sequence_source_dataset', detector_dataset)
+                detection_meta = st.session_state.get('sequence_detection_params', {})
+                lat_plot_col = detection_meta.get('latitude_col', lat_col)
+                lon_plot_col = detection_meta.get('longitude_col', lon_col)
+
+                show_full_flight = st.checkbox(
+                    "Show whole flight trajectory",
+                    value=True,
+                    key='detector_show_full_flight'
+                )
+                show_sequences_only = st.checkbox(
+                    "Show highlighted straight sequences",
+                    value=True,
+                    key='detector_show_sequence_overlay'
+                )
+
+                with st.spinner(f"Loading trajectory data from {source_dataset_for_plot}..."):
+                    df_plot = get_dataframe(file_path, source_dataset_for_plot)
+
+                if lat_plot_col not in df_plot.columns or lon_plot_col not in df_plot.columns:
+                    st.warning(
+                        f"Could not plot verification map because {lat_plot_col} / {lon_plot_col} "
+                        f"are not available in {source_dataset_for_plot}."
+                    )
+                else:
+                    max_stride = max(1, min(200, len(df_plot) // 2000 if len(df_plot) > 0 else 1))
+                    preview_stride = st.slider(
+                        "Preview sampling stride",
+                        min_value=1,
+                        max_value=max_stride,
+                        value=1,
+                        help="Higher values improve speed on very large flights.",
+                        key='detector_preview_stride'
+                    )
+
+                    lat_plot = pd.to_numeric(df_plot[lat_plot_col], errors='coerce').to_numpy(dtype=np.float64)
+                    lon_plot = pd.to_numeric(df_plot[lon_plot_col], errors='coerce').to_numpy(dtype=np.float64)
+
+                    fig_verify = go.Figure()
+                    palette = px.colors.qualitative.Bold + px.colors.qualitative.Set2 + px.colors.qualitative.Dark24
+                    dataset_scale = get_scale(source_dataset_for_plot)
+
+                    if show_full_flight:
+                        full_idx = np.arange(0, len(df_plot), preview_stride)
+                        full_valid = np.isfinite(lat_plot[full_idx]) & np.isfinite(lon_plot[full_idx])
+                        if np.any(full_valid):
+                            full_use = full_idx[full_valid]
+                            fig_verify.add_trace(go.Scattergl(
+                                x=lon_plot[full_use],
+                                y=lat_plot[full_use],
+                                mode='lines',
+                                line=dict(color='rgba(120,120,120,0.5)', width=1.0),
+                                name='Whole Flight',
+                                hoverinfo='skip',
+                                hovertemplate=None
+                            ))
+
+                    if show_sequences_only:
+                        for idx, seq in enumerate(current_sequences):
+                            seq_start = int(seq['start_row']) * dataset_scale
+                            seq_end_excl = (int(seq['end_row']) + 1) * dataset_scale
+                            seq_start = max(0, min(seq_start, len(df_plot)))
+                            seq_end_excl = max(0, min(seq_end_excl, len(df_plot)))
+                            if seq_end_excl - seq_start < 2:
+                                continue
+
+                            seq_idx = np.arange(seq_start, seq_end_excl, preview_stride)
+                            seq_valid = np.isfinite(lat_plot[seq_idx]) & np.isfinite(lon_plot[seq_idx])
+                            if not np.any(seq_valid):
+                                continue
+                            seq_use = seq_idx[seq_valid]
+                            seq_color = palette[idx % len(palette)]
+
+                            hover_step = max(1, preview_stride // 3)
+                            seq_hover_idx = np.arange(seq_start, seq_end_excl, hover_step)
+                            seq_hover_valid = np.isfinite(lat_plot[seq_hover_idx]) & np.isfinite(lon_plot[seq_hover_idx])
+                            if np.any(seq_hover_valid):
+                                seq_hover_use = seq_hover_idx[seq_hover_valid]
+                            else:
+                                seq_hover_use = seq_use
+
+                            fig_verify.add_trace(go.Scattergl(
+                                x=lon_plot[seq_use],
+                                y=lat_plot[seq_use],
+                                mode='lines',
+                                line=dict(color=seq_color, width=1.5),
+                                name=f"SEQ {int(seq['sequence_id'])}",
+                                hoverinfo='skip',
+                                hovertemplate=None
+                            ))
+
+                            # Invisible hover-capture layer so tooltips stay responsive over full-flight background.
+                            fig_verify.add_trace(go.Scattergl(
+                                x=lon_plot[seq_hover_use],
+                                y=lat_plot[seq_hover_use],
+                                mode='markers',
+                                marker=dict(size=11, color=seq_color, opacity=0.001),
+                                name=f"SEQ {int(seq['sequence_id'])} hover",
+                                showlegend=False,
+                                hovertemplate=(
+                                    f"Sequence {int(seq['sequence_id'])}<br>"
+                                    f"Length: {int(seq['length_rows'])} rows<br>"
+                                    f"StartRow: {int(seq['start_row'])}<br>"
+                                    f"EndRow: {int(seq['end_row'])}<br>"
+                                    f"Mean |Roll|: {float(seq['mean_abs_roll_deg']):.2f} deg<br>"
+                                    "Lon: %{x:.6f}<br>Lat: %{y:.6f}<extra></extra>"
+                                )
+                            ))
+
+                            # Start/end markers for quick visual validation.
+                            endpoints = [seq_use[0], seq_use[-1]]
+                            labels = ['Start', 'End']
+                            marker_symbols = ['circle', 'x']
+                            for ep, label, symbol in zip(endpoints, labels, marker_symbols):
+                                fig_verify.add_trace(go.Scattergl(
+                                    x=[lon_plot[ep]],
+                                    y=[lat_plot[ep]],
+                                    mode='markers',
+                                    marker=dict(size=9, color=seq_color, symbol=symbol, line=dict(width=1, color='white')),
+                                    name=f"SEQ {int(seq['sequence_id'])} {label}",
+                                    showlegend=False,
+                                    hovertemplate=(
+                                        f"Sequence {int(seq['sequence_id'])} {label}<br>"
+                                        f"Length: {int(seq['length_rows'])} rows<br>"
+                                        f"StartRow: {int(seq['start_row'])}<br>"
+                                        f"EndRow: {int(seq['end_row'])}<br>"
+                                        "Lon: %{x:.6f}<br>Lat: %{y:.6f}<extra></extra>"
+                                    )
+                                ))
+
+                    fig_verify.update_layout(
+                        title=f"Trajectory with Detected Straight Sequences ({source_dataset_for_plot})",
+                        xaxis_title=f"Longitude ({lon_plot_col})",
+                        yaxis_title=f"Latitude ({lat_plot_col})",
+                        hovermode='closest',
+                        height=650,
+                        width=1200,
+                        template='plotly_white',
+                        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0)
+                    )
+
+                    if show_full_flight or show_sequences_only:
+                        st.plotly_chart(fig_verify, width='stretch')
+                    else:
+                        st.info("Both trajectory layers are hidden. Enable at least one toggle to visualize the flight path.")
+
+                st.markdown("#### Detected Sequences")
+                seq_df = pd.DataFrame(current_sequences)
+                seq_df_display = seq_df.rename(columns={
+                    'sequence_id': 'SequenceID',
+                    'start_row': 'StartRow',
+                    'end_row': 'EndRow',
+                    'length_rows': 'LengthRows',
+                    'mean_abs_roll_deg': 'MeanAbsRollDeg',
+                    'mean_heading_change_deg': 'MeanHeadingChangeDeg',
+                    'min_height': 'MinHeight',
+                    'max_height': 'MaxHeight',
+                })
+                st.dataframe(seq_df_display, width='stretch', hide_index=True)
+
+                s1, s2, s3 = st.columns(3)
+                with s1:
+                    st.metric("Sequences", len(seq_df))
+                with s2:
+                    st.metric("Total Straight Rows", f"{int(seq_df['length_rows'].sum()):,}")
+                with s3:
+                    st.metric("Source Dataset", st.session_state.get('sequence_source_dataset', 'N/A'))
+
+                st.markdown("#### Sequence Actions")
+                sequence_labels = [
+                    f"SEQ {int(seq['sequence_id'])} | rows {int(seq['start_row'])}-{int(seq['end_row'])} | len {int(seq['length_rows'])}"
+                    for seq in current_sequences
+                ]
+                label_to_index = {label: idx for idx, label in enumerate(sequence_labels)}
+
+                selected_sequence_label = st.selectbox(
+                    "Select sequence to import into Row Range filter",
+                    sequence_labels,
+                    key='sequence_to_range_select'
+                )
+
+                if st.button("Import Selected Sequence To Row Range", key='import_sequence_to_row_range'):
+                    chosen_seq = current_sequences[label_to_index[selected_sequence_label]]
+                    new_start = int(chosen_seq['start_row'])
+                    new_end = int(chosen_seq['end_row']) + 1  # Row-range filter uses exclusive end index.
+
+                    # Defer row-range widget updates to the next run to avoid mutating instantiated widget state.
+                    st.session_state['pending_row_range_from_sequence'] = {
+                        'start': new_start,
+                        'end': new_end,
+                    }
+
+                    st.rerun()
+
+                if export_clicked:
+                    with st.spinner("Exporting straight-flight sequences to HDF5..."):
+                        exported_path = export_sequences_to_h5(
+                            input_h5_path=file_path,
+                            output_dir=export_output_dir,
+                            sequence_rows=current_sequences,
+                            is_large_dataset_fn=is_large_dataset,
+                            detection_params=st.session_state.get('sequence_detection_params', {})
+                        )
+                    st.success(f"Exported sequences file: {exported_path}")
+                    st.info("You can open the exported file from the sidebar file picker and browse each SEQxxx_* dataset.")
+            else:
+                if export_clicked:
+                    st.error("No detected sequences to export. Run detection first.")
     
     except Exception as e:
         st.error(f"Error loading file: {str(e)}")
