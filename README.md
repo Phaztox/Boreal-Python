@@ -124,9 +124,9 @@ This file is a standalone web application built with **Streamlit**. It provides 
     *   The 3D plot allows custom XYZ mapping (e.g., mapping Longitude, Latitude, and Height).
     *   To prevent browser crashes on massive datasets, it includes an adjustable downsampling slider (`sample_rate_3d`).
 *   **Straight Flight Detector**: Detects straight flight sequences from trajectory and attitude constraints (Latitude/Longitude path stability, Roll threshold, and altitude min/max bounds).
-   *   Sequences are listed with start/end row indices and length, with a verification trajectory plot that highlights detected segments.
-   *   A sequence can be imported directly into the global **Row Range Filter** (start/end rows) to continue analysis in the other tabs.
-   *   Detected sequences can be exported to a dedicated `.h5` file with per-sequence datasets (`SEQxxx_*`) and detection metadata.
+    *   Sequences are listed with start/end row indices and length, with a verification trajectory plot that highlights detected segments.
+    *   A sequence can be imported directly into the global **Row Range Filter** (start/end rows) to continue analysis in the other tabs.
+    *   Detected sequences can be exported to a dedicated `.h5` file with per-sequence datasets (`SEQxxx_*`) and detection metadata.
 *   **Spectrum Analysis**: Integrates `scipy.signal` to perform advanced mathematical analysis directly in the browser. It includes:
     *   PSD (Power Spectral Density) computations.
     *   Optional Multitaper method utilizing discrete prolate spheroidal sequences (DPSS).
